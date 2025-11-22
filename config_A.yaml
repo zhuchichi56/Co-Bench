@@ -1,0 +1,44 @@
+# Configuration for Machine A (默认配置)
+data_dir: "data"
+output_dir: "results"
+metric_results_dir: "metric_results/llm"
+recovery_rate_band: [0.85, 0.9]
+call_rate_param: 0.1
+
+inference:
+  # Machine A paths (当前默认路径)
+  strong_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
+  weak_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
+
+  max_tokens: 2048
+  temperature: 0.0
+  top_p: 0.9
+  skip_special_tokens: true
+
+  base_port: 8000
+  strong_gpu_ids: [2,3]
+  weak_gpu_ids: [0,1]
+
+  openai_api_key: "sk-UfaLUh9hblwmlr0p843eF3A3Ab324a878724484fA8B45c89"
+  openai_api_base: "https://api.ai-gaochao.cn/v1"
+
+  max_workers: 32
+  batch_size: 8
+  template_type: "default"
+  system_prompt: "You are a helpful AI assistant."
+
+router:
+  router_type:  "llm"        #"self_questioning" #
+  checkpoint_path: "probe_save/mixed_mmlu_train_numina_cot_5k_train_balanced_probe_mean.pt"
+  probe_type: "mean" #"mean" "transformer" "pca_conv" "hs_last_mlp" "coe_dual_mlp"
+  model_path: "output/sft/Qwen2.5-0.5B"
+
+training:
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.0001
+  reward_model_name: "microsoft/deberta-v3-base"
+  reward_output_dir: "reward_model"
+  logits_output_dir: "../logits"
+  probe_save_path: "probe_save"
+  seed: 42

@@ -1,0 +1,46 @@
+# Configuration for Machine B
+data_dir: "data"
+output_dir: "results"
+metric_results_dir: "metric_results/base"
+recovery_rate_band: [0.85, 0.95]
+call_rate_param: 0.3
+
+inference:
+  # Machine B paths - modify these for your actual paths
+  strong_model_path: "gpt-5"
+  weak_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
+  # weak_model_path: "/volume/pt-train/models/Qwen2.5-1.5B-Instruct"
+
+  max_tokens: 2048
+  temperature: 0.0
+  top_p: 0.9
+  skip_special_tokens: true
+
+  base_port: 8000  # Different port for Machine B
+  strong_gpu_ids: [1, 0]
+  weak_gpu_ids: [4,5,6,7]
+
+  openai_api_key: "sk-e9OcUwV80NLvl00o73E5F3FcFa2d4a6cB7D46cB3D6263a1ad"
+  openai_api_base: "https://api.ai-gaochao.cn/v1"
+
+  max_workers: 32
+  batch_size: 8
+  template_type: "default"
+  system_prompt: "You are a helpful AI assistant."
+
+router:
+  router_type: "probe"
+  # checkpoint_path: "probe_save_dynamic/base/numina_cot_5k_train_dirichlet_probe.pt"
+  checkpoint_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/one_dataset/mixed_alpaca_5k_train_math_mmlu_train_hs_last_mlp.pt"
+  probe_type: "hs_last_mlp" # "coe_dual_mlp"  "hs_mlp" “dynamic_dirichlet” "dynamic_softmax"
+  model_path: null
+
+training:
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.0001
+  reward_model_name: "microsoft/deberta-v3-base"
+  reward_output_dir: "reward_model"
+  logits_output_dir: "../hs"
+  probe_save_path: "probe_save/qwen/"
+  seed: 42

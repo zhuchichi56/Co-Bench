@@ -1,0 +1,873 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+from typing import List, Dict, Any, Optional, Tuple
+from pathlib import Path
+import json
+import random
+from tqdm import tqdm
+import fire
+from config import PipelineConfig
+import os
+import torch.nn.functional as F
+from router import MLPProbe, ConvProbe, MeanProbe, MaxProbe, MeanMaxProbe, TransformerProbe, ZScoreNormalizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import multiprocessing as mp
+import gc
+
+
+class ProbeDataset(Dataset):
+    def __init__(self, data: List[Dict], probe_type: str, normalizer: Optional[ZScoreNormalizer] = None):
+        self.data = data
+        self.probe_type = probe_type
+        self.normalizer = normalizer
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        hidden_states = torch.tensor(item.get("hidden_states", []), dtype=torch.float32)
+        label = torch.tensor(item.get("acc_label", 0), dtype=torch.float32)
+
+        # Feature extraction based on probe type
+        if self.probe_type == "hs_last_mlp":
+            features = hidden_states[-1]
+        elif self.probe_type in ["coe_dual_mlp", "coe_c_scalar", "coe_r_scalar"]:
+            mag_features = []
+            angle_features = []
+            for i in range(hidden_states.shape[0] - 1):
+                h_curr, h_next = hidden_states[i], hidden_states[i+1]
+                mag_features.append(torch.norm(h_curr, p=2) + torch.norm(h_next, p=2))
+                angle_features.append(F.cosine_similarity(h_curr, h_next, dim=0))
+            features = torch.cat([torch.stack(mag_features), torch.stack(angle_features)], dim=0)
+        else:
+            features = hidden_states
+
+        if self.normalizer and self.probe_type not in ["pca_conv", "mean", "max", "mean+max", "transformer"]:
+            features = self.normalizer(features)
+
+        return features, label
+
+
+class ProbeTrainer:
+    PROBE_CLASSES = {
+        "hs_last_mlp": MLPProbe, "hs_mlp": MLPProbe, "coe_dual_mlp": MLPProbe,
+        "coe_c_scalar": MLPProbe, "coe_r_scalar": MLPProbe, "pca_conv": ConvProbe,
+        "mean": MeanProbe, "max": MaxProbe, "mean+max": MeanMaxProbe, "transformer": TransformerProbe
+    }
+
+    def __init__(self, probe_type: str, device: Optional[str] = None):
+        self.probe_type = probe_type
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = None
+        self.normalizer = None
+
+    def build_normalizer(self, train_dataset) -> Optional[ZScoreNormalizer]:
+        if self.probe_type in ["pca_conv", "mean", "max", "mean+max", "transformer"]:
+            return None
+
+        features = []
+        for feat, _ in train_dataset:
+            if isinstance(feat, torch.Tensor):
+                features.append(feat.unsqueeze(0))
+            elif isinstance(feat, np.ndarray):
+                features.append(torch.from_numpy(feat).unsqueeze(0))
+
+        X = torch.cat(features, dim=0).float()
+        mask = torch.isfinite(X).all(dim=1)
+        X = X[mask]
+        mu = X.mean(dim=0)
+        std = X.std(dim=0).clamp_min(1e-6)
+        return ZScoreNormalizer(mu, std)
+
+    def get_input_dim(self, sample) -> int:
+        hidden_states = sample[0]
+        if self.probe_type in ["hs_last_mlp", "hs_mlp"]:
+            return hidden_states.shape[0]
+        elif self.probe_type in ["coe_dual_mlp", "coe_c_scalar", "coe_r_scalar"]:
+            return (hidden_states.shape[0] ) 
+        return hidden_states.shape[1]
+        
+
+    def create_model(self, input_dim: int, output_dim: int = 1) -> nn.Module:
+        return self.PROBE_CLASSES[self.probe_type](input_dim, output_dim)
+
+    def train(self, train_data: List[Dict], val_data: List[Dict], epochs: int = 50,
+              batch_size: int = 32, lr: float = 1e-4, save_path: Optional[str] = None) -> Dict:
+
+        # Setup datasets and normalizer
+        temp_dataset = ProbeDataset(train_data, self.probe_type, normalizer=None)
+        self.normalizer = self.build_normalizer(temp_dataset)
+        train_dataset = ProbeDataset(train_data, self.probe_type, self.normalizer)
+        val_dataset = ProbeDataset(val_data, self.probe_type, self.normalizer)
+
+        # Setup model and training
+        num_gpus = torch.cuda.device_count()
+        effective_batch_size = batch_size * max(1, num_gpus)
+        input_dim = self.get_input_dim(train_dataset[0])
+
+        self.model = self.create_model(input_dim).to(self.device)
+        if num_gpus > 1:
+            self.model = nn.DataParallel(self.model)
+
+        # Data loaders
+        train_loader = DataLoader(train_dataset, batch_size=effective_batch_size, shuffle=True,
+                                num_workers=min(8, num_gpus * 2), pin_memory=True)
+        val_loader = DataLoader(val_dataset, batch_size=effective_batch_size, shuffle=False,
+                              num_workers=min(8, num_gpus * 2), pin_memory=True)
+
+        
+        criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+
+        best_val_loss = float('inf')
+        train_losses, val_losses = [], []
+        patience_counter = 0
+
+        for epoch in range(epochs):
+            # Training phase
+            self.model.train()
+            train_loss = 0.0
+
+            for batch_features, batch_labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} - Training"):
+                batch_features = batch_features.to(self.device, non_blocking=True)
+                batch_labels = batch_labels.to(self.device, non_blocking=True)
+
+                if self.probe_type == "pca_conv":
+                    batch_features = batch_features.permute(0, 2, 1).contiguous()
+
+                optimizer.zero_grad()
+                outputs = self.model(batch_features).squeeze(-1)
+                loss = criterion(outputs, batch_labels)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+
+            # Validation phase
+            self.model.eval()
+            val_loss = 0.0
+            correct = 0
+            total = 0
+
+            with torch.no_grad():
+                for batch_features, batch_labels in tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} - Validation"):
+                    batch_features = batch_features.to(self.device, non_blocking=True)
+                    batch_labels = batch_labels.to(self.device, non_blocking=True)
+
+                    if self.probe_type == "pca_conv":
+                        batch_features = batch_features.permute(0, 2, 1).contiguous()
+
+                    outputs = self.model(batch_features).squeeze(-1)
+                    loss = criterion(outputs, batch_labels)
+                    val_loss += loss.item()
+
+                    predictions = torch.sigmoid(outputs) > 0.5
+                    correct += (predictions == batch_labels.bool()).sum().item()
+                    total += batch_labels.size(0)
+
+            train_loss /= len(train_loader)
+            val_loss /= len(val_loader)
+            val_accuracy = correct / total
+
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+            scheduler.step(val_loss)
+
+            print(f"Epoch {epoch+1}: Train Loss={train_loss:.4f}, Val Loss={val_loss:.4f}, "
+                  f"Val Acc={val_accuracy:.4f}, LR={optimizer.param_groups[0]['lr']:.6f}")
+
+            # Save best model
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                if save_path:
+                    model_to_save = self.model.module if hasattr(self.model, 'module') else self.model
+                    self._save_checkpoint(save_path, input_dim, model_to_save)
+                    print(f"💾 New best model saved! Val Loss: {best_val_loss:.4f}")
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= 8 and epoch > 10:
+                    print(f"🛑 Early stopping at epoch {epoch+1}")
+                    break
+
+        return {'train_losses': train_losses, 'val_losses': val_losses, 'best_val_loss': best_val_loss}
+
+    def _save_checkpoint(self, save_path: str, input_dim: int, model_to_save=None):
+        try:
+            if model_to_save is None:
+                model_to_save = self.model
+
+            model_state_dict = model_to_save.module.state_dict() if hasattr(model_to_save, 'module') else model_to_save.state_dict()
+
+            checkpoint = {
+                'model_state_dict': model_state_dict,
+                'metadata': {'probe_type': self.probe_type, 'input_dim': input_dim, 'output_dim': 1, 'device': self.device}
+            }
+
+            if self.normalizer:
+                checkpoint['normalizer'] = {'mu': self.normalizer.mu, 'std': self.normalizer.std}
+
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+            torch.save(checkpoint, save_path)
+            print(f"💾 Model saved to {save_path}")
+        except Exception as e:
+            print(f"❌ Error saving checkpoint: {e}")
+            raise
+
+
+class RewardModelTrainer:
+    def __init__(self, model_name: str = "microsoft/deberta-v3-base"):
+        self.model_name = model_name
+
+    def prepare_data(self, data: List[Dict]) -> List[Dict]:
+        return [{"text": f"Question: {item.get('instruction', '')}\nAnswer: {item.get('generated_response', '')}",
+                 "label": item.get("score", 0.0)} for item in data]
+
+    def train(self, train_data: List[Dict], val_data: List[Dict], output_dir: str = "reward_model", **training_args):
+        from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
+
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1)
+
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+
+        # Create datasets
+        class RewardDataset(Dataset):
+            def __init__(self, data, tokenizer, max_length=512):
+                self.data = data
+                self.tokenizer = tokenizer
+                self.max_length = max_length
+
+            def __len__(self):
+                return len(self.data)
+
+            def __getitem__(self, idx):
+                item = self.data[idx]
+                encoding = self.tokenizer(item["text"], truncation=True, padding="max_length",
+                                        max_length=self.max_length, return_tensors="pt")
+                return {"input_ids": encoding["input_ids"].flatten(),
+                       "attention_mask": encoding["attention_mask"].flatten(),
+                       "labels": torch.tensor(item["label"], dtype=torch.float)}
+
+        train_processed = self.prepare_data(train_data)
+        val_processed = self.prepare_data(val_data)
+        train_dataset = RewardDataset(train_processed, tokenizer)
+        val_dataset = RewardDataset(val_processed, tokenizer)
+
+        args = TrainingArguments(
+            output_dir=output_dir, num_train_epochs=3, per_device_train_batch_size=16,
+            per_device_eval_batch_size=16, warmup_steps=500, weight_decay=0.01,
+            logging_dir=f"{output_dir}/logs", evaluation_strategy="epoch", save_strategy="epoch",
+            load_best_model_at_end=True, **training_args
+        )
+
+        trainer = Trainer(model=model, args=args, train_dataset=train_dataset,
+                         eval_dataset=val_dataset, tokenizer=tokenizer)
+        trainer.train()
+        trainer.save_model()
+        print(f"Reward model saved to {output_dir}")
+        return trainer
+
+
+def _process_data_batch(model, tokenizer, batch_data, device):
+    """Process a batch of data through the model"""
+    instructions = [item.get("instruction", "") for item in batch_data]
+    scores = [item.get("score", 0.0) for item in batch_data]
+
+    inputs = tokenizer(instructions, return_tensors="pt", truncation=True, max_length=1024, padding=True)
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    with torch.no_grad():
+        outputs = model(**inputs, output_hidden_states=True)
+        attn_mask = inputs.get("attention_mask", None)
+
+        results = []
+        for batch_idx in range(len(instructions)):
+            hs_list = []
+            for layer_states in outputs.hidden_states:
+                layer_state = layer_states[batch_idx:batch_idx+1]
+                if attn_mask is not None:
+                    mask = attn_mask[batch_idx:batch_idx+1].unsqueeze(-1).to(torch.bool)
+                    ls = layer_state.to(torch.float32)
+                    ls = torch.where(mask, ls, torch.zeros_like(ls))
+                    count = mask.sum(dim=1).clamp(min=1).to(ls.dtype)
+                    pooled = ls.sum(dim=1) / count
+                else:
+                    pooled = layer_state.mean(dim=1)
+                hs_list.append(pooled.squeeze(0))
+
+            hidden_states = torch.stack(hs_list, dim=0).to(torch.float32).cpu().numpy()
+            results.append((hidden_states, scores[batch_idx]))
+
+        return results
+
+
+def _process_model_single_gpu(model_path: str, data_list: List[dict], dataset_path: str,
+                             output_dir: Path, batch_size: int):
+    """Process model on single GPU"""
+    print(f"Loading model from {model_path}")
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, torch_dtype=torch.float32, device_map="auto", trust_remote_code=True)
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+
+    model.eval()
+    device = next(model.parameters()).device
+
+    all_results = []
+    for i in tqdm(range(0, len(data_list), batch_size), desc=f"Batches ({Path(model_path).name})"):
+        batch_data = data_list[i:i + batch_size]
+        batch_results = _process_data_batch(model, tokenizer, batch_data, device)
+        all_results.extend(batch_results)
+
+    # Save results
+    model_name = Path(model_path).name
+    task_name = Path(dataset_path).stem
+    output_path = output_dir / f"{model_name}_{task_name}.pt"
+    if task_name.startswith("mmlu_pro_"):
+        output_dir = os.path.join(output_dir,"mmlu_pro")
+        output_path = output_dir / f"{model_name}_{task_name}.pt"
+    torch.save(all_results, output_path)
+    print(f"Saved {len(all_results)} samples to {output_path}")
+
+    del model, tokenizer
+    torch.cuda.empty_cache()
+
+
+def _worker_process_data(gpu_id: int, model_path: str, data_chunk: List[dict],
+                        chunk_start_idx: int, result_queue, batch_size: int):
+    """Worker process for multi-GPU processing"""
+    torch.cuda.set_device(gpu_id)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, torch_dtype=torch.float32, device_map={"": f"cuda:{gpu_id}"}, trust_remote_code=True)
+    model.eval()
+
+    results = []
+    for i in range(0, len(data_chunk), batch_size):
+        batch_data = data_chunk[i:i + batch_size]
+        batch_results = _process_data_batch(model, tokenizer, batch_data, f"cuda:{gpu_id}")
+
+        # Add original indices
+        for j, (hidden_states, score) in enumerate(batch_results):
+            original_idx = chunk_start_idx + i + j
+            results.append((original_idx, hidden_states, score))
+
+    result_queue.put((gpu_id, results))
+    del model, tokenizer
+    torch.cuda.empty_cache()
+
+
+def _process_model_multi_gpu(model_path: str, data_list: List[dict], dataset_path: str,
+                           output_dir: Path, batch_size: int, num_gpus: int):
+    """Multi-GPU processing with order preservation"""
+    print(f"Loading model from {model_path} on {num_gpus} GPUs")
+
+    # Split data into chunks
+    chunk_size = (len(data_list) + num_gpus - 1) // num_gpus
+    data_chunks = []
+    chunk_start_indices = []
+
+    for i in range(num_gpus):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, len(data_list))
+        if start_idx < len(data_list):
+            data_chunks.append(data_list[start_idx:end_idx])
+            chunk_start_indices.append(start_idx)
+
+    # Process with multiprocessing
+    ctx = mp.get_context('spawn')
+    result_queue = ctx.Queue()
+    processes = []
+
+    for gpu_id in range(len(data_chunks)):
+        p = ctx.Process(target=_worker_process_data, args=(
+            gpu_id, model_path, data_chunks[gpu_id], chunk_start_indices[gpu_id], result_queue, batch_size))
+        p.start()
+        processes.append(p)
+
+    # Collect and sort results
+    gpu_results = {}
+    for _ in range(len(processes)):
+        gpu_id, results = result_queue.get()
+        gpu_results[gpu_id] = results
+
+    for p in processes:
+        p.join()
+
+    # Reconstruct ordered results
+    all_results_with_idx = []
+    for gpu_id in range(len(data_chunks)):
+        if gpu_id in gpu_results:
+            all_results_with_idx.extend(gpu_results[gpu_id])
+
+    all_results_with_idx.sort(key=lambda x: x[0])
+    all_results = [(hidden_states, score) for _, hidden_states, score in all_results_with_idx]
+
+    # Save results
+    model_name = Path(model_path).name
+    task_name = Path(dataset_path).stem
+    output_path = output_dir / f"{model_name}_{task_name}.pt"
+    torch.save(all_results, output_path)
+    print(f"Saved {len(all_results)} samples to {output_path}")
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+
+# Helper functions (unchanged interfaces)
+def train_probe_model(train_data: List[Dict], val_data: List[Dict], probe_type: str,
+                     save_path: str, **kwargs) -> Dict:
+    trainer = ProbeTrainer(probe_type)
+    return trainer.train(train_data, val_data, save_path=save_path, **kwargs)
+
+
+def train_reward_model(train_data: List[Dict], val_data: List[Dict],
+                      model_name: str = "microsoft/deberta-v3-base",
+                      output_dir: str = "reward_model", **kwargs):
+    trainer = RewardModelTrainer(model_name)
+    return trainer.train(train_data, val_data, output_dir=output_dir, **kwargs)
+
+
+def load_training_data(data_dir: str) -> Tuple[List[Dict], List[Dict]]:
+    data_path = Path(data_dir)
+    train_files = list(data_path.glob("**/train*.pt"))
+    val_files = list(data_path.glob("**/val*.pt"))
+
+    train_data, val_data = [], []
+
+    for file_path in train_files:
+        data = torch.load(file_path, map_location="cpu")
+        if isinstance(data, dict) and "data" in data:
+            data = data["data"]
+        train_data.extend(data)
+
+    for file_path in val_files:
+        data = torch.load(file_path, map_location="cpu")
+        if isinstance(data, dict) and "data" in data:
+            data = data["data"]
+        val_data.extend(data)
+
+    return train_data, val_data
+
+
+def get_available_probe_types() -> List[str]:
+    return list(ProbeTrainer.PROBE_CLASSES.keys())
+
+
+def generate_logits_for_models(model_paths: List[str], dataset_path: str, output_dir: str = "logits_output",
+                              batch_size: int = 8, num_gpus: int = 1):
+    """Generate logits and hidden states for given models and dataset"""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(dataset_path, 'r', encoding='utf-8') as f:
+        data_list = [json.loads(line.strip()) for line in f]
+
+    print(f"Processing {len(model_paths)} models with {len(data_list)} samples")
+
+    for model_path in tqdm(model_paths, desc="Models"):
+        if num_gpus > 1:
+            _process_model_multi_gpu(model_path, data_list, dataset_path, output_dir, batch_size, num_gpus)
+        else:
+            _process_model_single_gpu(model_path, data_list, dataset_path, output_dir, batch_size)
+
+    return output_dir
+
+
+def set_random_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
+def _mix_datasets(all_datasets: Dict, mix_strategy: str, max_samples: int = None) -> List[Dict]:
+    """Mix datasets according to strategy"""
+    mixed_data = []
+
+    if mix_strategy == "balanced":
+        num_datasets = len(all_datasets)
+        samples_per_dataset = (max_samples // num_datasets) if max_samples else min(len(data) for data in all_datasets.values())
+
+        for task, data in all_datasets.items():
+            actual_samples = min(samples_per_dataset, len(data))
+            sampled_data = random.sample(data, actual_samples)
+            for hidden_states, score in sampled_data:
+                mixed_data.append({"hidden_states": hidden_states, "acc_label": score, "task": task})
+
+    elif mix_strategy == "proportional":
+        total_available = sum(len(data) for data in all_datasets.values())
+        target_size = min(max_samples or 10000, total_available)
+
+        for task, data in all_datasets.items():
+            proportion = len(data) / total_available
+            task_samples = min(int(target_size * proportion), len(data))
+            if task_samples > 0:
+                sampled_data = random.sample(data, task_samples)
+                for hidden_states, score in sampled_data:
+                    mixed_data.append({"hidden_states": hidden_states, "acc_label": score, "task": task})
+
+    elif mix_strategy == "all":
+        all_flat = []
+        for task, data in all_datasets.items():
+            for hidden_states, score in data:
+                all_flat.append({"hidden_states": hidden_states, "acc_label": score, "task": task})
+
+        if max_samples and len(all_flat) > max_samples:
+            mixed_data = random.sample(all_flat, max_samples)
+        else:
+            mixed_data = all_flat
+
+    random.shuffle(mixed_data)
+    return mixed_data
+
+
+def generate_logits(config: PipelineConfig, task: str, task_path: str):
+    """Complete probe training pipeline: Generate logits from {task}.jsonl"""
+    print(f"🚀 Starting complete probe training pipeline for task: {task}")
+
+    dataset_path = task_path
+    if not Path(dataset_path).exists():
+        raise FileNotFoundError(f"Dataset file {dataset_path} not found. Please run get_score first.")
+
+    logits_output_dir = Path(config.training.logits_output_dir or "logits_output")
+    weak_model_name = Path(config.inference.weak_model_path).name
+    # Support mmlu_pro subdirectory for logits
+    if task.startswith("mmlu_pro_"):
+        weak_logits_file = logits_output_dir / "mmlu_pro" / f"{weak_model_name}_{task}.pt"
+    else:
+        weak_logits_file = logits_output_dir / f"{weak_model_name}_{task}.pt"
+
+    if weak_logits_file.exists():
+        print(f"🔄 Found existing logits files: {weak_logits_file}")
+        print("⏭️  Skipping logits generation step...")
+    else:
+        print("📊 Step 1: Generating logits and hidden states")
+        generate_logits_for_models(
+            model_paths=[config.inference.weak_model_path],
+            dataset_path=dataset_path,
+            output_dir=str(logits_output_dir),
+            batch_size=16,
+            num_gpus=4
+        )
+
+
+def complete_probe_training_pipeline_with_mixed_datasets(
+    config: PipelineConfig,
+    task_list: list[str],
+    mix_strategy: str = "balanced",
+    max_samples: int = None,
+    save_subdir: Optional[str] = None,
+    custom_save_name: Optional[str] = None,
+):
+    """Train probe model using multiple mixed datasets"""
+    print(f"🚀 Starting mixed dataset probe training for tasks: {task_list}")
+    print(f"📊 Mix strategy: {mix_strategy}")
+    if max_samples:
+        print(f"🎯 Max samples: {max_samples}")
+
+    logits_output_dir = Path(config.training.logits_output_dir or "logits_output")
+    weak_model_name = Path(config.inference.weak_model_path).name
+
+    # Load all datasets
+    all_datasets = {}
+    dataset_stats = {}
+
+    for task in task_list:
+        # Support mmlu_pro subdirectory for logits
+        if task.startswith("mmlu_pro_"):
+            pt_file = logits_output_dir / "mmlu_pro" / f"{weak_model_name}_{task}.pt"
+        else:
+            pt_file = logits_output_dir / f"{weak_model_name}_{task}.pt"
+        if not pt_file.exists():
+            print(f"⚠️  Warning: Logits file {pt_file} not found, skipping task: {task}")
+            continue
+
+        print(f"📁 Loading dataset for task: {task}")
+        data = torch.load(pt_file, map_location="cpu", weights_only=False)
+        if not data:
+            print(f"⚠️  Warning: Empty dataset for task: {task}, skipping...")
+            continue
+
+        all_datasets[task] = data
+        positive_count = sum(1 for _, score in data if score > 0.5)
+        dataset_stats[task] = {
+            "total": len(data), "positive": positive_count, "negative": len(data) - positive_count,
+            "positive_ratio": positive_count / len(data) if len(data) > 0 else 0
+        }
+        print(f"   📊 {task}: {len(data)} samples ({positive_count} pos, {len(data) - positive_count} neg)")
+
+    if not all_datasets:
+        raise ValueError("No valid datasets found!")
+
+    # Mix datasets
+    print(f"🔄 Mixing datasets using strategy: {mix_strategy}")
+    mixed_training_data = _mix_datasets(all_datasets, mix_strategy, max_samples)
+
+    # Statistics
+    total_samples = len(mixed_training_data)
+    total_positive = sum(1 for sample in mixed_training_data if sample["acc_label"] > 0.5)
+    task_counts = {}
+    for sample in mixed_training_data:
+        task_counts[sample["task"]] = task_counts.get(sample["task"], 0) + 1
+
+    print(f"📊 Mixed dataset: {total_samples} total samples")
+    print(f"   Positive samples: {total_positive} ({total_positive/total_samples*100:.1f}%)")
+
+    # Train/Val split
+    split_idx = int(len(mixed_training_data) * 0.8)
+    train_data = mixed_training_data[:split_idx]
+    val_data = mixed_training_data[split_idx:]
+
+    print(f"📊 Train/Val split: {len(train_data)} train, {len(val_data)} val samples")
+
+    # Train probe
+    print("🧠 Training probe model on mixed datasets")
+    probe_type = config.router.probe_type
+    epochs = config.training.epochs
+    batch_size = config.training.batch_size
+    lr = config.training.learning_rate
+
+    # Decide save directory and filename
+    save_dir = os.path.join(config.training.probe_save_path, save_subdir) if save_subdir else config.training.probe_save_path
+    os.makedirs(save_dir, exist_ok=True)
+
+    if custom_save_name:
+        filename = custom_save_name if custom_save_name.endswith('.pt') else f"{custom_save_name}.pt"
+    else:
+        task_suffix = "_".join(sorted(task_list))
+        sample_suffix = f"_{max_samples}samples" if max_samples else ""
+        filename = f"mixed_{task_suffix}_{probe_type}.pt"
+
+    save_path = os.path.join(save_dir, filename)
+
+    results = train_probe_model(train_data, val_data, probe_type, save_path,
+                               epochs=epochs, batch_size=batch_size, lr=lr)
+
+    print(f"✅ Mixed dataset probe training complete!")
+    print(f"   Best val loss: {results['best_val_loss']:.4f}")
+    print(f"💾 Model saved to: {save_path}")
+
+    return {
+        "model_path": save_path, "training_results": results, "dataset_stats": dataset_stats,
+        "mixed_stats": {"total_samples": total_samples, "positive_samples": total_positive,
+                       "task_distribution": task_counts, "mix_strategy": mix_strategy, "max_samples": max_samples},
+        "train_samples": len(train_data), "val_samples": len(val_data), "tasks_used": list(all_datasets.keys())
+    }
+
+
+def complete_layerwise_probe_training_pipeline(config: PipelineConfig, task_list: list[str],
+                                             mix_strategy: str = "balanced", max_samples: int = None):
+    """Train probe models for each layer using hs_mlp automatically"""
+    print(f"🚀 Starting layer-wise probe training for tasks: {task_list}")
+    print(f"📊 Mix strategy: {mix_strategy}")
+    if max_samples:
+        print(f"🎯 Max samples: {max_samples}")
+
+    logits_output_dir = Path(config.training.logits_output_dir or "logits_output")
+    weak_model_name = Path(config.inference.weak_model_path).name
+
+    # Load and mix datasets (reuse logic)
+    all_datasets = {}
+    dataset_stats = {}
+
+    for task in task_list:
+        
+        pt_file = logits_output_dir / f"{weak_model_name}_{task}.pt"
+        if not pt_file.exists():
+            print(f"⚠️ Warning: Logits file {pt_file} not found, skipping task: {task}")
+            continue
+
+        print(f"📁 Loading dataset for task: {task}")
+        data = torch.load(pt_file, map_location="cpu", weights_only=False)
+        if not data:
+            print(f"⚠️ Warning: Empty dataset for task: {task}, skipping...")
+            continue
+
+        all_datasets[task] = data
+        positive_count = sum(1 for _, score in data if score > 0.5)
+        dataset_stats[task] = {
+            "total": len(data), "positive": positive_count, "negative": len(data) - positive_count,
+            "positive_ratio": positive_count / len(data) if len(data) > 0 else 0
+        }
+        print(f"   📊 {task}: {len(data)} samples ({positive_count} pos, {len(data) - positive_count} neg)")
+
+    if not all_datasets:
+        raise ValueError("No valid datasets found!")
+
+    # Mix datasets
+    print(f"🔄 Mixing datasets using strategy: {mix_strategy}")
+    mixed_training_data = _mix_datasets(all_datasets, mix_strategy, max_samples)
+
+    total_samples = len(mixed_training_data)
+    print(f"📊 Mixed dataset: {total_samples} total samples")
+
+    # Train/Val split
+    split_idx = int(len(mixed_training_data) * 0.8)
+    train_data = mixed_training_data[:split_idx]
+    val_data = mixed_training_data[split_idx:]
+
+    print(f"📊 Train/Val split: {len(train_data)} train, {len(val_data)} val samples")
+
+    # Detect number of layers
+    sample_hidden_states = train_data[0]["hidden_states"]
+    num_layers = sample_hidden_states.shape[0]
+    print(f"🧠 Detected {num_layers} layers in hidden states")
+
+    # Training setup
+    epochs = config.training.epochs or 50
+    batch_size = config.training.batch_size or 32
+    lr = config.training.learning_rate or 1e-4
+
+    all_layer_results = {}
+    task_suffix = "_".join(sorted(task_list))
+    sample_suffix = f"_{max_samples}samples" if max_samples else ""
+
+    print(f"🚀 Starting training for all {num_layers} layers...")
+
+    # Train probe for each layer
+    for layer_idx in range(num_layers):
+        print(f"\n🧠 Training probe for layer {layer_idx}/{num_layers-1}")
+
+        # Create layer-specific training data
+        layer_train_data = []
+        layer_val_data = []
+
+        for item in train_data:
+            layer_hidden_states = item["hidden_states"][layer_idx]
+            if isinstance(layer_hidden_states, torch.Tensor):
+                layer_hidden_states = layer_hidden_states.cpu().numpy()
+
+            layer_train_data.append({
+                "hidden_states": layer_hidden_states,
+                "acc_label": item["acc_label"],
+                "task": item["task"]
+            })
+
+        for item in val_data:
+            layer_hidden_states = item["hidden_states"][layer_idx]
+            if isinstance(layer_hidden_states, torch.Tensor):
+                layer_hidden_states = layer_hidden_states.cpu().numpy()
+
+            layer_val_data.append({
+                "hidden_states": layer_hidden_states,
+                "acc_label": item["acc_label"],
+                "task": item["task"]
+            })
+
+        # Create save path for this layer
+        layer_save_path = os.path.join(
+            config.training.probe_save_path,
+            f"mixed_{task_suffix}_{mix_strategy}{sample_suffix}_layer{layer_idx}_probe_hs_mlp.pt"
+        )
+
+        # Train using hs_mlp probe type
+        layer_results = train_probe_model(
+            layer_train_data, layer_val_data, "hs_mlp", layer_save_path,
+            epochs=epochs, batch_size=batch_size, lr=lr
+        )
+
+        all_layer_results[f"layer_{layer_idx}"] = {
+            **layer_results,
+            "model_path": layer_save_path,
+            "layer_idx": layer_idx
+        }
+
+        print(f"💾 Layer {layer_idx} model saved to: {layer_save_path}")
+
+    print(f"\n✅ All layer-wise probe training complete!")
+
+    # Summary
+    print(f"\n📊 Layer-wise Performance Summary:")
+    for layer_key, result in all_layer_results.items():
+        layer_idx = result['layer_idx']
+        best_loss = result['best_val_loss']
+        print(f"   Layer {layer_idx}: Val Loss = {best_loss:.4f}")
+
+    return {
+        "layer_results": all_layer_results,
+        "dataset_stats": dataset_stats,
+        "mixed_stats": {"total_samples": total_samples, "mix_strategy": mix_strategy, "max_samples": max_samples},
+        "train_samples": len(train_data),
+        "val_samples": len(val_data),
+        "tasks_used": list(all_datasets.keys()),
+        "num_layers": num_layers
+    }
+
+
+def complete_reward_training_pipeline(config: PipelineConfig, task: str):
+    """Complete reward model training pipeline using {task}.jsonl data"""
+    print(f"🏆 Starting complete reward model training pipeline for task: {task}")
+
+    dataset_path = f"{task}.jsonl"
+    if not Path(dataset_path).exists():
+        raise FileNotFoundError(f"Dataset file {dataset_path} not found. Please run get_score first.")
+
+    data_list = []
+    with open(dataset_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            data_list.append(json.loads(line.strip()))
+
+    # Prepare data for reward model training
+    training_data = []
+    for item in data_list:
+        for response_key in ["small_response", "large_response"]:
+            training_data.append({
+                "instruction": item.get("instruction", ""),
+                "generated_response": item.get(response_key, ""),
+                "score": item.get("score", 0.0)
+            })
+
+    # Train/Val split
+    random.shuffle(training_data)
+    split_idx = int(len(training_data) * 0.8)
+    train_data = training_data[:split_idx]
+    val_data = training_data[split_idx:]
+
+    print(f"📊 Prepared {len(train_data)} train samples, {len(val_data)} val samples")
+
+    # Train reward model
+    model_name = config.training.reward_model_name or "microsoft/deberta-v3-base"
+    output_dir = config.training.reward_output_dir or f"{task}_reward_model"
+
+    results = train_reward_model(train_data, val_data, model_name, output_dir)
+
+    print("✅ Reward model training complete!")
+    print(f"💾 Model saved to: {output_dir}")
+
+    return {
+        "model_path": output_dir,
+        "train_samples": len(train_data),
+        "val_samples": len(val_data),
+        "training_results": results
+    }
+
+
+def train_probe_from_config(config: PipelineConfig, task: str):
+    """Train probe using config parameters and task data"""
+    return complete_probe_training_pipeline(config, task)
+
+
+def train_reward_from_config(config: PipelineConfig, task: str):
+    """Train reward model using config parameters and task data"""
+    return complete_reward_training_pipeline(config, task)
+
+
+if __name__ == "__main__":
+    fire.Fire()

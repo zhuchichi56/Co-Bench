@@ -1,0 +1,20 @@
+# Large files and results
+src/results/
+src/qwen2.5-results/
+outputs/
+hs/
+wandb/
+visualizations/
+src/metric_results/
+*.jsonl
+*.png
+*.jpg
+*.csv
+*.pt
+*.pth
+*.bin
+*.safetensors
+__pycache__/
+*.pyc
+__MACOSX/
+._*
