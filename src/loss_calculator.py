@@ -693,7 +693,9 @@ def llm_judge_general(
     questions: List[dict], 
     answers: List[dict], 
     judge_model: str = "gpt-4o", 
-    ref_answers: List[dict] = None
+    ref_answers: List[dict] = None,
+    max_workers: int = 32,
+    batch_size: int = 8
 ) -> List[float]:
     """
     LLM-as-a-Judge evaluation function for general datasets with reference answers
@@ -793,8 +795,12 @@ def llm_judge_general(
                 return -1.0
         return -1.0
 
-    # Main evaluation logic
-    scores = []
+    # Main evaluation logic - batch processing for efficiency
+    from inference.vllm_client import parallel_inference
+    import json
+    
+    # Prepare all prompts for batch processing
+    batch_prompts = []
     
     for i, (question, answer) in enumerate(zip(questions, answers)):
         ref_answer = ref_answers[i] if ref_answers and i < len(ref_answers) else None
@@ -810,12 +816,70 @@ def llm_judge_general(
         # Format the prompt
         user_prompt = format_judge_prompt(question_text, answer_text, judge_prompt, ref_answer_text)
         
-        # Get judgment from model
-        judgment = call_judge_model(judge_prompt["system_prompt"], user_prompt)
+        # Format as conversation for GPT models
+        messages = [
+            {"role": "system", "content": judge_prompt["system_prompt"]},
+            {"role": "user", "content": user_prompt}
+        ]
+        batch_prompts.append(json.dumps(messages))
+    
+    # Batch call to judge model for all evaluations at once
+    print(f"Processing {len(batch_prompts)} evaluations in batch with max_workers={max_workers}, batch_size={batch_size}")
+    
+    # For GPT models, we need to pass the batch parameters through a temp file approach
+    if "gpt" in judge_model.lower():
+        import tempfile
+        import os
+        from inference.gpt_inference import parallel_inference_gpt
         
-        # Extract score
+        # Create temporary file for GPT inference
+        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False)
+        temp_file.close()
+        
+        try:
+            # Convert batch_prompts back to simple queries for GPT inference
+            simple_queries = []
+            print("Preparing queries for GPT inference...")
+            for prompt_json in tqdm(batch_prompts, desc="Converting prompts"):
+                messages = json.loads(prompt_json)
+                # Extract user content from messages
+                user_content = next((msg["content"] for msg in messages if msg["role"] == "user"), "")
+                simple_queries.append(user_content)
+            
+            print("Starting GPT batch inference...")
+            judgments = parallel_inference_gpt(
+                queries=simple_queries,
+                output_file=temp_file.name,
+                model=judge_model,
+                max_workers=max_workers,
+                batch_size=batch_size,
+                temperature=0.0,
+                max_tokens=2048,
+                system_prompt="You are a helpful assistant."
+            )
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
+    else:
+        # For non-GPT models, use the original approach
+        print("Starting local model batch inference...")
+        judgments = parallel_inference(
+            prompt_list=batch_prompts,
+            max_tokens=2048,
+            temperature=0.0,
+            template_type="direct",
+            model_name_or_path=judge_model
+        )
+    
+    # Extract scores from all judgments
+    scores = []
+    print("Extracting scores from judgments...")
+    for judgment in tqdm(judgments, desc="Processing judgments"):
         score = extract_score(judgment)
-        print(f"Extracted Score: {score}")
         scores.append(score)
+    
+    print(f"Completed evaluation of {len(scores)} samples")
+    print(f"Score distribution: mean={sum(scores)/len(scores):.2f}, min={min(scores):.2f}, max={max(scores):.2f}")
     
     return scores

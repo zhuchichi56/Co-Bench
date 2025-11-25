@@ -260,49 +260,42 @@ class ModelEvaluator:
         
         # 加载数据集
         data, dataset_type = self.data_loader.load_dataset(dataset_name)
-        
-        # 评估小模型
         small_scores = []
-        for item, entry in zip(data, small_data):
-            response = entry.get('generated_response', '')
-            gold_response = item.get('response', '')
-            
-            if dataset_type == "general":
-                # llm_judge_general expects lists, wrap single items
-                questions = [{"instruction": item['instruction']}]
-                answers = [{"response": response}]
-                ref_answers = [{"response": gold_response}]
-                score_list = llm_judge_general(questions, answers, "gpt-5", ref_answers)
-                score = score_list[0] if score_list else 0.0
-            else:
-              
+        if dataset_type == "general":
+            # Batch all general dataset evaluations for parallel processing
+            questions = [{"instruction": item['instruction']} for item in data]
+            answers = [{"response": entry.get('generated_response', '')} for entry in small_data]
+            ref_answers = [{"response": item.get('response', '')} for item in data]
+            small_scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32, batch_size=8)
+        else:
+            # Process non-general datasets individually
+            for item, entry in zip(data, small_data):
+                response = entry.get('generated_response', '')
+                gold_response = item.get('response', '')
                 is_correct = self.loss_calc._evaluate_response(
-                            response, gold_response, item['instruction'], dataset_type
-                    )
+                    response, gold_response, item['instruction'], dataset_type
+                )
                 score = 1.0 if is_correct else 0.0
-            
-            small_scores.append(score)
+                small_scores.append(score)
         
         # 评估大模型
         large_scores = []
-        for item, entry in zip(data, large_data):
-            response = entry.get('generated_response', entry.get('large_response', ''))
-            gold_response = item.get('response', '')
-            
-            if dataset_type == "general":
-                # llm_judge_general expects lists, wrap single items
-                questions = [{"instruction": item['instruction']}]
-                answers = [{"response": response}]
-                ref_answers = [{"response": gold_response}]
-                score_list = llm_judge_general(questions, answers, "gpt-5", ref_answers)
-                score = score_list[0] if score_list else 0.0
-            else:
+        if dataset_type == "general":
+            # Batch all general dataset evaluations for parallel processing
+            questions = [{"instruction": item['instruction']} for item in data]
+            answers = [{"response": entry.get('generated_response', entry.get('large_response', ''))} for entry in large_data]
+            ref_answers = [{"response": item.get('response', '')} for item in data]
+            large_scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32, batch_size=8)
+        else:
+            # Process non-general datasets individually
+            for item, entry in zip(data, large_data):
+                response = entry.get('generated_response', entry.get('large_response', ''))
+                gold_response = item.get('response', '')
                 is_correct = self.loss_calc._evaluate_response(
-                            response, gold_response, item['instruction'], dataset_type
-                    )
+                    response, gold_response, item['instruction'], dataset_type
+                )
                 score = 1.0 if is_correct else 0.0
-            
-            large_scores.append(score)
+                large_scores.append(score)
         
         # 构建结果
         small_results = []
@@ -398,24 +391,31 @@ class ModelEvaluator:
         small_scores = []
         small_results = []
         
-        for i, (item, entry) in enumerate(zip(data, small_generated)):
-            response = entry.get('generated_response', '')
-            gold_response = item.get('response', '')
-            
-            if dataset_type == "general":
-                score = llm_judge_general(item['instruction'],response,"gpt-5",gold_response)
-            else:
+        # Batch evaluation for general datasets to improve performance
+        if dataset_type == "general":
+            # Prepare batch data for parallel evaluation
+            questions = [{"instruction": item['instruction']} for item in data]
+            answers = [{"response": entry.get('generated_response', '')} for entry in small_generated]
+            ref_answers = [{"response": item.get('response', '')} for item in data]
+            small_scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32, batch_size=8)
+        else:
+            # Process non-general datasets individually
+            for item, entry in zip(data, small_generated):
+                response = entry.get('generated_response', '')
+                gold_response = item.get('response', '')
                 is_correct = self.loss_calc._evaluate_response(
                     response, gold_response, item['instruction'], dataset_type
                 )
                 score = 1.0 if is_correct else 0.0
-            
-            small_scores.append(score)
+                small_scores.append(score)
+        
+        # Create results for small model
+        for i, (item, entry, score) in enumerate(zip(data, small_generated, small_scores)):
             small_results.append({
                 "id": i,
                 "instruction": item["instruction"],
-                "response": gold_response,
-                "generated_response": response,
+                "response": item.get('response', ''),
+                "generated_response": entry.get('generated_response', ''),
                 "score": score,
                 "dataset": dataset_name,
                 "dataset_type": dataset_type
@@ -443,24 +443,31 @@ class ModelEvaluator:
             large_scores = []
             large_results = []
             
-            for i, (item, entry) in enumerate(zip(data, large_generated)):
-                response = entry.get('generated_response', entry.get('large_response', ''))
-                gold_response = item.get('response', '')
-                
-                if dataset_type == "general":
-                    score = llm_judge_general(item['instruction'],response,"gpt-5",gold_response)
-                else:
+            # Batch evaluation for large model
+            if dataset_type == "general":
+                # Prepare batch data for parallel evaluation
+                questions = [{"instruction": item['instruction']} for item in data]
+                answers = [{"response": entry.get('generated_response', entry.get('large_response', ''))} for entry in large_generated]
+                ref_answers = [{"response": item.get('response', '')} for item in data]
+                large_scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32, batch_size=8)
+            else:
+                # Process non-general datasets individually
+                for item, entry in zip(data, large_generated):
+                    response = entry.get('generated_response', entry.get('large_response', ''))
+                    gold_response = item.get('response', '')
                     is_correct = self.loss_calc._evaluate_response(
                         response, gold_response, item['instruction'], dataset_type
                     )
                     score = 1.0 if is_correct else 0.0
-                
-                large_scores.append(score)
+                    large_scores.append(score)
+            
+            # Create results for large model
+            for i, (item, entry, score) in enumerate(zip(data, large_generated, large_scores)):
                 large_results.append({
                     "id": i,
                     "instruction": item["instruction"],
-                    "response": gold_response,
-                    "generated_response": response,
+                    "response": item.get('response', ''),
+                    "generated_response": entry.get('generated_response', entry.get('large_response', '')),
                     "score": score,
                     "dataset": dataset_name,
                     "dataset_type": dataset_type
