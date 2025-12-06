@@ -245,11 +245,8 @@ class MultiModalLossCalculator:
         """Evaluate if response is correct"""
         if loss_type == "safety":
             return not any(keyword in generated for keyword in self.refusal_keywords)
-        elif loss_type in ["mmlu", "mmlupro"]:
-            pred_choice = self._extract_choice(generated)
-            gold_choice = self._extract_choice(gold)
-            return pred_choice == gold_choice and pred_choice is not None
-        elif loss_type in ["math"]:
+        elif loss_type in ["mmlu", "mmlupro", "math"]:
+            # 使用 xVerify 评估 MMLU 和 Math 类型的问题
             # Initialize xVerify model with config parameters
             if self.inference_config is not None:
                 xverify_model = Model(
@@ -261,7 +258,7 @@ class MultiModalLossCalculator:
             else:
                 # Fallback to default values if no config provided
                 xverify_model = Model(
-                    model_name="xVerify-0.5B",
+                    model_name="xVerify",
                     model_path_or_url="http://127.0.0.1:8000/v1",
                     inference_mode="api",
                     api_key="dummy",

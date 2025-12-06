@@ -72,30 +72,58 @@ class RouterEvaluationPipeline:
             large_model_output_dir = os.path.join(output_path,"mmlu_pro", large_model_name)
         small_output_file = os.path.join(small_model_output_dir, f"{task}.jsonl")
         large_output_file = os.path.join(large_model_output_dir, f"{task}.jsonl")
-        print(small_output_file)
+        print(f"Small model output: {small_output_file}")
+        print(f"Large model output: {large_output_file}")
 
-        if os.path.exists(small_output_file) and os.path.exists(large_output_file):
-            print(f"Found existing, loading from file...")
-            results  = self.data_manager.evaluator.evaluate_model_from_file(
-                    small_output_file,
-                    large_output_file,
-                    task,
-                    # judge_model=judge_model_cfg,
-                    # judge_max_workers=judge_max_workers,
-                )
+        # 创建输出目录
+        os.makedirs(small_model_output_dir, exist_ok=True)
+        os.makedirs(large_model_output_dir, exist_ok=True)
+
+        # 评估小模型
+        if os.path.exists(small_output_file):
+            print(f"Found existing small model results, loading from file...")
+            small_result = self.data_manager.evaluator.evaluate_single_model_from_file(
+                small_output_file,
+                task,
+                model_type="weak"
+            )
         else:
-            results= self.data_manager.evaluate_models_on_datasets(
-                small_model_path=small_model_path,
-                large_model_path= large_model_path,
-                datasets=datasets,
+            print(f"Evaluating small model...")
+            small_result = self.data_manager.evaluator.evaluate_single_dataset(
+                model_path=small_model_path,
+                dataset_name=task,
+                output_path=small_output_file,
+                model_type="weak",
                 max_tokens=max_tokens,
-                temperature=temperature,
-                # judge_model=judge_model_cfg,
-                # judge_max_workers=judge_max_workers,
+                temperature=temperature
             )
 
-        small_results = results[task]["small_results"]
-        large_results = results[task]["large_results"]
+        small_results = small_result["results"]
+        small_accuracy = small_result["accuracy"]
+
+        # 评估大模型
+        if os.path.exists(large_output_file):
+            print(f"Found existing large model results, loading from file...")
+            large_result = self.data_manager.evaluator.evaluate_single_model_from_file(
+                large_output_file,
+                task,
+                model_type="strong"
+            )
+        else:
+            print(f"Evaluating large model...")
+            large_result = self.data_manager.evaluator.evaluate_single_dataset(
+                model_path=large_model_path,
+                dataset_name=task,
+                output_path=large_output_file,
+                model_type="strong",
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+
+        large_results = large_result["results"]
+        large_accuracy = large_result["accuracy"]
+
+        print(f"\nResults: Small model: {small_accuracy:.3f}, Large model: {large_accuracy:.3f}")
         
     
         output_file = os.path.join(output_path, f"{task}.jsonl")

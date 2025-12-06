@@ -254,7 +254,7 @@ class ZScoreNormalizer:
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return (x.float().cpu() - self.mu) / self.std
 
-
+# TODO:多加几层
 class MLPProbe(nn.Module):
     def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None):
         super().__init__()

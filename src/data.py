@@ -239,29 +239,31 @@ class ModelEvaluator:
             })
         
         return results
-    # TODO: 把目前同时传入大模型和小模型的逻辑改为就传入一个模型然后做eval，大小模型两步骤在pipeline的get_scores里写为调用两次这个function
-    def evaluate_model_from_file(self, small_file_path: str, large_file_path: str, dataset_name: str) -> Dict:
+
+    def evaluate_single_model_from_file(self, file_path: str, dataset_name: str, model_type: str = "weak") -> Dict:
         """
-        从文件中读取responses并进行evaluation
+        从文件中读取单个模型的responses并进行evaluation
+
+        Args:
+            file_path: 模型输出文件路径
+            dataset_name: 数据集名称
+            model_type: 模型类型 ("weak" 或 "strong")
+
+        Returns:
+            包含评估结果的字典: {"results": List[Dict], "accuracy": float}
         """
         import json
-        
+
         # 读取文件
-        small_data = []
-        large_data = []
-        
-        with open(small_file_path, 'r', encoding='utf-8') as f:
+        model_data = []
+        with open(file_path, 'r', encoding='utf-8') as f:
             for line in f:
                 if line.strip():
-                    small_data.append(json.loads(line))
-        
-        with open(large_file_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                if line.strip():
-                    large_data.append(json.loads(line))
-        
+                    model_data.append(json.loads(line))
+
         # 加载数据集
         data, dataset_type = self.data_loader.load_dataset(dataset_name)
+
         def _ensure_general_scores(entries: List[Dict], response_getter) -> List[float]:
             """Reuse existing scores when available and only rejudge missing ones."""
             scores = [entry.get('score', -1) for entry in entries]
@@ -276,155 +278,114 @@ class ModelEvaluator:
                 scores[idx] = judged
             return scores
 
-        small_scores = []
+        # 评估模型
+        scores = []
         if dataset_type == "general":
-            small_scores = _ensure_general_scores(
-                small_data,
-                lambda entry: entry.get('generated_response', '')
-            )
-        else:
-            # Process non-general datasets individually
-            for item, entry in zip(data, small_data):
-                response = entry.get('generated_response', '')
-                gold_response = item.get('response', '')
-                is_correct = self.loss_calc._evaluate_response(
-                    response, gold_response, item['instruction'], dataset_type
-                )
-                score = 1.0 if is_correct else 0.0
-                small_scores.append(score)
-                
-        large_scores = []
-        if dataset_type == "general":
-            large_scores = _ensure_general_scores(
-                large_data,
+            scores = _ensure_general_scores(
+                model_data,
                 lambda entry: entry.get('generated_response', entry.get('large_response', ''))
             )
         else:
             # Process non-general datasets individually
-            for item, entry in zip(data, large_data):
+            for item, entry in zip(data, model_data):
                 response = entry.get('generated_response', entry.get('large_response', ''))
                 gold_response = item.get('response', '')
                 is_correct = self.loss_calc._evaluate_response(
                     response, gold_response, item['instruction'], dataset_type
                 )
                 score = 1.0 if is_correct else 0.0
-                large_scores.append(score)
-        
+                scores.append(score)
+
         # 构建结果
-        small_results = []
-        large_results = []
-        
-        for i, (item, s_entry, l_entry, s_score, l_score) in enumerate(
-            zip(data, small_data, large_data, small_scores, large_scores)
-        ):
-            small_results.append({
+        results = []
+        for i, (item, entry, score) in enumerate(zip(data, model_data, scores)):
+            results.append({
                 "id": i,
                 "instruction": item["instruction"],
                 "response": item.get("response", ""),
-                "generated_response": s_entry.get('generated_response', ''),
-                "score": s_score,
+                "generated_response": entry.get('generated_response', entry.get('large_response', '')),
+                "score": score,
                 "dataset": dataset_name,
                 "dataset_type": dataset_type
             })
-           
-            
-            large_results.append({
-                "id": i,
-                "instruction": item["instruction"],
-                "response": item.get("response", ""),
-                "generated_response": l_entry.get('generated_response', l_entry.get('large_response', '')),
-                "score": l_score,
-                "dataset": dataset_name,
-                "dataset_type": dataset_type
-            })
-        
-        small_accuracy = sum(small_scores) / len(small_scores)
-        large_accuracy = sum(large_scores) / len(large_scores)
-        with open(small_file_path, 'w', encoding='utf-8') as f:
-            for result in small_results:
+
+        accuracy = sum(scores) / len(scores) if scores else 0.0
+
+        # 保存更新后的结果（带有score）
+        with open(file_path, 'w', encoding='utf-8') as f:
+            for result in results:
                 f.write(json.dumps(result, ensure_ascii=False) + '\n')
-        with open(large_file_path,'w',encoding='utf-8') as f:
-            for result in large_results:
-                f.write(json.dumps(result, ensure_ascii=False) + '\n')
-        
-        
-        print(f"Small model accuracy: {small_accuracy:.3f}")
-        print(f"Large model accuracy: {large_accuracy:.3f}")
-        
+
+        print(f"{model_type.capitalize()} model accuracy: {accuracy:.3f}")
+
         return {
-            dataset_name: {
-                "small_results": small_results,
-                "large_results": large_results,
-                "small_accuracy": small_accuracy,
-                "large_accuracy": large_accuracy
-            }
+            "results": results,
+            "accuracy": accuracy
         }
-     
-    def evaluate_dataset(self, 
-                     small_model_path: str, 
-                     large_model_path: Optional[str],
-                     dataset_name: str,
-                     small_output_path: str,
-                     large_output_path: str,
-                     openai_api_base: Optional[str] = None,
-                     openai_api_key: Optional[str] = None,
-                     **kwargs) -> Dict:
+
+
+    def evaluate_single_dataset(self,
+                               model_path: str,
+                               dataset_name: str,
+                               output_path: str,
+                               model_type: str = "weak",
+                               openai_api_base: Optional[str] = None,
+                               openai_api_key: Optional[str] = None,
+                               **kwargs) -> Dict:
         """
-        评估数据集,支持只运行小模型或同时运行大小模型
-        
+        评估单个模型在数据集上的表现
+
         Args:
-            small_model_path: 小模型路径
-            large_model_path: 大模型路径,如果为None则只运行小模型
+            model_path: 模型路径
             dataset_name: 数据集名称
-            small_output_path: 小模型输出路径
-            large_output_path: 大模型输出路径
+            output_path: 输出文件路径
+            model_type: 模型类型 ("weak" 或 "strong")
             openai_api_base: OpenAI API基础URL
             openai_api_key: OpenAI API密钥
-            **kwargs: 其他参数
-        
+            **kwargs: 其他参数（如 max_tokens, temperature）
+
         Returns:
-            与 evaluate_model_from_file 相同格式的字典
+            {"results": List[Dict], "accuracy": float}
         """
         import json
-        
-        print(f"Evaluating {dataset_name}...")
-        
+
+        print(f"Evaluating {model_type} model on {dataset_name}...")
+
         # 加载数据集
         data, dataset_type = self.data_loader.load_dataset(dataset_name)
-        
-        # 评估小模型(生成responses)
-        small_generated = self.evaluate_model(
-            small_model_path, 
-            dataset_name, 
-            model_type="weak",
+
+        # 生成responses
+        generated = self.evaluate_model(
+            model_path,
+            dataset_name,
+            model_type=model_type,
             **kwargs
         )
-        
-        # 评估小模型 - 与 evaluate_model_from_file 相同的逻辑
-        small_scores = []
-        small_results = []
-        
-        # Batch evaluation for general datasets to improve performance
+
+        # 评估模型
+        scores = []
+        results = []
+
+        # Batch evaluation for general datasets
         if dataset_type == "general":
-            # Prepare batch data for parallel evaluation
             questions = [{"instruction": item['instruction']} for item in data]
-            answers = [{"response": entry.get('generated_response', '')} for entry in small_generated]
+            answers = [{"response": entry.get('generated_response', '')} for entry in generated]
             ref_answers = [{"response": item.get('response', '')} for item in data]
-            small_scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32)
+            scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32)
         else:
             # Process non-general datasets individually
-            for item, entry in zip(data, small_generated):
+            for item, entry in zip(data, generated):
                 response = entry.get('generated_response', '')
                 gold_response = item.get('response', '')
                 is_correct = self.loss_calc._evaluate_response(
                     response, gold_response, item['instruction'], dataset_type
                 )
                 score = 1.0 if is_correct else 0.0
-                small_scores.append(score)
-        
-        # Create results for small model
-        for i, (item, entry, score) in enumerate(zip(data, small_generated, small_scores)):
-            small_results.append({
+                scores.append(score)
+
+        # Create results
+        for i, (item, entry, score) in enumerate(zip(data, generated, scores)):
+            results.append({
                 "id": i,
                 "instruction": item["instruction"],
                 "response": item.get('response', ''),
@@ -433,83 +394,20 @@ class ModelEvaluator:
                 "dataset": dataset_name,
                 "dataset_type": dataset_type
             })
-        
-        small_accuracy = sum(small_scores) / len(small_scores)
-        
-        # 保存小模型结果
-        with open(small_output_path, 'w', encoding='utf-8') as f:
-            for result in small_results:
-                f.write(json.dumps(result, ensure_ascii=False) + '\n')
-        
-        # 评估大模型
-        if large_model_path is not None:
-            large_generated = self.evaluate_model(
-                large_model_path, 
-                dataset_name, 
-                model_type="strong",
-                openai_api_base=openai_api_base,
-                openai_api_key=openai_api_key, 
-                **kwargs
-            )
-            
-            # 评估大模型 - 与 evaluate_model_from_file 相同的逻辑
-            large_scores = []
-            large_results = []
-            
-            # Batch evaluation for large model
-            if dataset_type == "general":
-                # Prepare batch data for parallel evaluation
-                questions = [{"instruction": item['instruction']} for item in data]
-                answers = [{"response": entry.get('generated_response', entry.get('large_response', ''))} for entry in large_generated]
-                ref_answers = [{"response": item.get('response', '')} for item in data]
-                large_scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=32)
-            else:
-                # Process non-general datasets individually
-                for item, entry in zip(data, large_generated):
-                    response = entry.get('generated_response', entry.get('large_response', ''))
-                    gold_response = item.get('response', '')
-                    is_correct = self.loss_calc._evaluate_response(
-                        response, gold_response, item['instruction'], dataset_type
-                    )
-                    score = 1.0 if is_correct else 0.0
-                    large_scores.append(score)
-            
-            # Create results for large model
-            for i, (item, entry, score) in enumerate(zip(data, large_generated, large_scores)):
-                large_results.append({
-                    "id": i,
-                    "instruction": item["instruction"],
-                    "response": item.get('response', ''),
-                    "generated_response": entry.get('generated_response', entry.get('large_response', '')),
-                    "score": score,
-                    "dataset": dataset_name,
-                    "dataset_type": dataset_type
-                })
-            
-            large_accuracy = sum(large_scores) / len(large_scores)
-            
-            # 保存大模型结果
-            with open(large_output_path, 'w', encoding='utf-8') as f:
-                for result in large_results:
-                    f.write(json.dumps(result, ensure_ascii=False) + '\n')
-            
-            print(f"{dataset_name} - Small model: {small_accuracy:.3f}, Large model: {large_accuracy:.3f}")
-        else:
-            # 没有大模型时返回空结果
-            large_results = []
-            large_accuracy = 0.0
-            print(f"{dataset_name} - Small model: {small_accuracy:.3f}")
-        
-        # 返回与 evaluate_model_from_file 相同格式的结果
-        return {
-            dataset_name: {
-                "small_results": small_results,
-                "large_results": large_results,
-                "small_accuracy": small_accuracy,
-                "large_accuracy": large_accuracy
-            }
-        }
 
+        accuracy = sum(scores) / len(scores) if scores else 0.0
+
+        # 保存结果
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for result in results:
+                f.write(json.dumps(result, ensure_ascii=False) + '\n')
+
+        print(f"{dataset_name} - {model_type.capitalize()} model: {accuracy:.3f}")
+
+        return {
+            "results": results,
+            "accuracy": accuracy
+        }
 
 class DataManager:
     def __init__(self, data_dir: str = "data", output_dir: str = "results", inference_config=None):

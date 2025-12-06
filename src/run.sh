@@ -4,9 +4,9 @@
 source /volume/pt-train/users/wzhang/ghchen/zh/miniconda3/bin/activate router
 
 # 默认参数
-DATASETS="${1:-mmlu_test}"
-PROBE_TYPES="${2:-hs_last_mlp mean max coe_dual_mlp}"
-MAX_SAMPLES="${3:-10000}"
+DATASETS="${1:-alpaca_5k_train}"
+PROBE_TYPES="${2:- coe_dual_mlp}" #hs_last_mlp mean max
+MAX_SAMPLES="${3:-4000}"
 
 echo "========================================="
 echo "CoBench 完整 Pipeline"

@@ -8,9 +8,9 @@ lpm_call_rate_band: [0.25, 0.3]
 inference:
   # Machine B paths - modify these for your actual paths
   strong_model_path: "gpt-5"
-  weak_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
+  # weak_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
   # weak_model_path: "/volume/pt-train/models/Qwen2.5-1.5B-Instruct"
-
+#测qwen 2.5 7b的情况
   max_tokens: 2048
   temperature: 0.0
   top_p: 0.9

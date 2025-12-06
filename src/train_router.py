@@ -32,6 +32,13 @@ class ProbeDataset(Dataset):
         hidden_states = torch.tensor(item.get("hidden_states", []), dtype=torch.float32)
         label = torch.tensor(item.get("acc_label", 0), dtype=torch.float32)
 
+        # 调试：检查是否缺少 acc_label
+        if not hasattr(self, '_debug_checked'):
+            self._debug_checked = True
+            if "acc_label" not in item:
+                print(f"⚠️ Warning: 'acc_label' not found in item {idx}. Item keys: {list(item.keys())}")
+                print(f"   Item sample: {item}")
+
         # Feature extraction based on probe type
         if self.probe_type == "hs_last_mlp":
             features = hidden_states[-1]
@@ -67,7 +74,7 @@ class ProbeTrainer:
         self.probe_config = probe_config or {}
 
     def build_normalizer(self, train_dataset) -> Optional[ZScoreNormalizer]:
-        if self.probe_type in ["pca_conv", "mean", "max", "mean+max", "transformer"]:
+        if self.probe_type in ["pca_conv", "mean", "max", "mean+max", "transformer","hs_mlp","hs_last_mlp"]:
             return None
 
         features = []
@@ -89,7 +96,8 @@ class ProbeTrainer:
         if self.probe_type in ["hs_last_mlp", "hs_mlp"]:
             return hidden_states.shape[0]
         elif self.probe_type in ["coe_dual_mlp", "coe_c_scalar", "coe_r_scalar"]:
-            return (hidden_states.shape[0] ) 
+
+            return hidden_states.shape[0] 
         return hidden_states.shape[1]
         
 
@@ -488,7 +496,6 @@ def _process_model_multi_gpu(model_path: str, data_list: List[dict], dataset_pat
     torch.cuda.empty_cache()
 
 
-# Helper functions (unchanged interfaces)
 def train_probe_model(train_data: List[Dict], val_data: List[Dict], probe_type: str,
                      save_path: str, probe_config: Optional[Dict] = None, **kwargs) -> Dict:
     trainer = ProbeTrainer(probe_type, probe_config=probe_config)
@@ -686,7 +693,7 @@ def complete_probe_training_pipeline_with_mixed_datasets(
     for sample in mixed_training_data:
         task_counts[sample["task"]] = task_counts.get(sample["task"], 0) + 1
 
-    print(f"📊 Mixed dataset: {total_samples} total samples")
+    print(f"Mixed dataset: {total_samples} total samples")
     print(f"   Positive samples: {total_positive} ({total_positive/total_samples*100:.1f}%)")
 
     # Train/Val split
@@ -694,10 +701,11 @@ def complete_probe_training_pipeline_with_mixed_datasets(
     train_data = mixed_training_data[:split_idx]
     val_data = mixed_training_data[split_idx:]
 
-    print(f"📊 Train/Val split: {len(train_data)} train, {len(val_data)} val samples")
+    print(f"Train/Val split: {len(train_data)} train, {len(val_data)} val samples")
 
+    
     # Train probe
-    print("🧠 Training probe model on mixed datasets")
+    print("Training probe model on mixed datasets")
     probe_type = config.router.probe_type
     epochs = config.training.epochs
     batch_size = config.training.batch_size
@@ -721,16 +729,16 @@ def complete_probe_training_pipeline_with_mixed_datasets(
     else:
         task_suffix = "_".join(sorted(task_list))
         sample_suffix = f"_{max_samples}samples" if max_samples else ""
-        filename = f"mixed_{task_suffix}_{probe_type}.pt"
+        filename = f"{sample_suffix}_mixed_{task_suffix}_{probe_type}.pt"
 
     save_path = os.path.join(save_dir, filename)
 
     results = train_probe_model(train_data, val_data, probe_type, save_path,
                                probe_config=probe_config, epochs=epochs, batch_size=batch_size, lr=lr)
 
-    print(f"✅ Mixed dataset probe training complete!")
-    print(f"   Best val loss: {results['best_val_loss']:.4f}")
-    print(f"💾 Model saved to: {save_path}")
+    print(f"Mixed dataset probe training complete!")
+    print(f"Best val loss: {results['best_val_loss']:.4f}")
+    print(f"Model saved to: {save_path}")
 
     return {
         "model_path": save_path, "training_results": results, "dataset_stats": dataset_stats,
@@ -936,9 +944,9 @@ def complete_reward_training_pipeline(config: PipelineConfig, task: str):
     }
 
 
-def train_probe_from_config(config: PipelineConfig, task: str):
-    """Train probe using config parameters and task data"""
-    return complete_probe_training_pipeline(config, task)
+# def train_probe_from_config(config: PipelineConfig, task: str):
+#     """Train probe using config parameters and task data"""
+#     return complete_probe_training_pipeline(config, task)
 
 
 def train_reward_from_config(config: PipelineConfig, task: str):
