@@ -28,13 +28,13 @@ echo "最大样本数: $MAX_SAMPLES"
 #   --host 0.0.0.0 \
 #   --port 8000 \
 #   --tensor-parallel-size 1 \
-#   --served-model-name xVerify-0.5B \
+#   --served-model-name xVerify \
 #   --trust-remote-code
 
 # scores
-# python run_new.py --mode get_scores --datasets $DATASETS
+python run_new.py --mode get_scores --datasets $DATASETS
 # # logits
-# python run_new.py --mode get_logits --datasets $DATASETS
+python run_new.py --mode get_logits --datasets $DATASETS
 # # training probe
 python run_new.py --mode train --datasets $DATASETS --probe_types $PROBE_TYPES --max_samples $MAX_SAMPLES --save_loss_history
 
