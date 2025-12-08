@@ -25,6 +25,7 @@ class InferenceConfig:
     cuda_visible_devices: str = "2,3,4,5"
 
     # GPT API configuration
+    use_azure: bool = False
     openai_api_key: Optional[str] = field(default_factory=lambda: os.environ.get("OPENAI_API_KEY"))
     openai_api_base: Optional[str] = field(default_factory=lambda: os.environ.get("OPENAI_API_BASE", "https://api.ai-gaochao.cn/v1"))
     judge_model: str = "gpt-4o"

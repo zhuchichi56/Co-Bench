@@ -447,7 +447,7 @@ class MultiModalLossCalculator:
 
 
 
-def llm_as_a_judge(questions: List[dict], answers: List[dict], judge_model: str = "gpt-4o", ref_answers: List[dict] = None) -> List[float]:
+def llm_as_a_judge(questions: List[dict], answers: List[dict], judge_model: str = "gpt-4o", ref_answers: List[dict] = None, max_workers: int = None) -> List[float]:
     """
     LLM-as-a-Judge evaluation function with identical prompt and config from mt_bench_judge.py
 

@@ -4,7 +4,7 @@
 source /volume/pt-train/users/wzhang/ghchen/zh/miniconda3/bin/activate llf
 
 # 默认参数
-DATASETS="${1:-alpaca_10k}"
+DATASETS="${1:- alpaca_5k_test}"
 PROBE_TYPES="${2:- mean}" #hs_last_mlp mean max
 MAX_SAMPLES="${3:-4000}"
 
@@ -37,11 +37,11 @@ echo "最大样本数: $MAX_SAMPLES"
 
 # 等待模型服务启动完成后，运行 scores
 # scores
-# python run_new.py --mode get_scores --datasets $DATASETS
+python run_new.py --mode get_scores --datasets $DATASETS
 # # # logits
 # python run_new.py --mode get_logits --datasets $DATASETS
 # # training probe
-python run_new.py --mode train --datasets $DATASETS --probe_types $PROBE_TYPES --max_samples $MAX_SAMPLES --save_loss_history
+# python run_new.py --mode train --datasets $DATASETS --probe_types $PROBE_TYPES --max_samples $MAX_SAMPLES --save_loss_history
 
 
 # # 评估

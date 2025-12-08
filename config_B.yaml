@@ -19,7 +19,7 @@ inference:
   strong_gpu_ids: [1, 0]
   weak_gpu_ids: [0,1,2,3]
 
-  openai_api_key: "sk-e9OcUwV80NLvl00o73E5F3FcFa2d4a6cB7D46cB3D6263a1a"
+  openai_api_key: "sk-Iorkt1JndcIRHiEpDbC392Be199e411c8202E78669Cf685d"
   openai_api_base: "https://api.ai-gaochao.cn/v1"
   judge_model: "gpt-5"
 

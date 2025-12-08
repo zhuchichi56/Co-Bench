@@ -55,6 +55,13 @@ def save_result_atomic(result: Dict, output_file: str, lock: threading.Lock):
             f.write(json.dumps(result, ensure_ascii=False) + "\n")
 
 
+async def save_result_atomic_async(result: Dict, output_file: str, lock: asyncio.Lock):
+    """Save single result in an async-safe way."""
+    async with lock:
+        with open(output_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(result, ensure_ascii=False) + "\n")
+
+
 def _parallel_inference_gpt_openai(
     queries: List[str],
     output_file: str,
@@ -186,8 +193,6 @@ def _parallel_inference_gpt_azure(
     resolved_system_prompt = system_prompt if system_prompt is not None else resolved_config.system_prompt
     concurrency = max_workers if max_workers is not None else resolved_config.max_workers
 
-    lock = threading.Lock()
-
     # Load finished queries for resuming
     finished = load_finished_queries(output_file)
     logger.info(f"Loaded {len(finished)} finished queries from {output_file}")
@@ -205,55 +210,80 @@ def _parallel_inference_gpt_azure(
 
     logger.info(f"Pending queries: {len(pending_queries)}")
 
-    async def infer_one_azure(query: Dict[str, Any], credential: AzureCliCredential) -> Optional[Dict]:
-        try:
-            client, resolved_model = get_client(model_name=model, credential=credential)
-            messages = build_messages(query["instruction"], resolved_system_prompt)
+    if not pending_queries:
+        logger.info("All queries already processed.")
+        return load_responses_from_file(output_file, queries) or []
 
-            # For GPT-5, don't pass max_tokens and temperature
-            if "gpt-5" in resolved_model or "gpt-5" in model:
-                response_text = await asyncio.to_thread(
-                    get_response,
-                    client,
-                    resolved_model,
-                    messages,
-                )
-            else:
-                response_text = await asyncio.to_thread(
-                    get_response,
-                    client,
-                    resolved_model,
-                    messages,
-                    max_tokens,
-                    temperature,
-                    top_p,
-                )
+    async def infer_one_azure(
+        query: Dict[str, Any],
+        credential: AzureCliCredential,
+        semaphore: asyncio.Semaphore,
+        write_lock: asyncio.Lock,
+        bar: Optional[tqdm]
+    ) -> Optional[Dict]:
+        async with semaphore:
+            try:
+                client, resolved_model = get_client(model_name=model, credential=credential)
+                messages = build_messages(query["instruction"], resolved_system_prompt)
 
-            return {
-                "query_id": query["query_id"],
-                "instruction": query["instruction"],
-                "response": response_text,
-            }
-        except Exception as e:
-            logger.error(f"Error for query_id {query.get('query_id')}: {e}")
-            return None
+                # For GPT-5, don't pass max_tokens and temperature
+                if "gpt-5" in resolved_model or "gpt-5" in model:
+                    response_text = await asyncio.to_thread(
+                        get_response,
+                        client,
+                        resolved_model,
+                        messages,
+                    )
+                else:
+                    response_text = await asyncio.to_thread(
+                        get_response,
+                        client,
+                        resolved_model,
+                        messages,
+                        max_tokens,
+                        temperature,
+                        top_p,
+                    )
+
+                result = {
+                    "query_id": query["query_id"],
+                    "instruction": query["instruction"],
+                    "response": response_text,
+                }
+
+                # Save result atomically
+                await save_result_atomic_async(result, output_file, write_lock)
+
+                if bar:
+                    bar.update(1)
+
+                return result
+
+            except Exception as e:
+                logger.error(f"Error for query_id {query.get('query_id')}: {e}")
+                if bar:
+                    bar.update(1)
+                return None
 
     async def run_all_azure():
         credential = AzureCliCredential()
-        semaphore = asyncio.Semaphore(concurrency)
+        semaphore = asyncio.Semaphore(min(concurrency, len(pending_queries)))
+        write_lock = asyncio.Lock()
 
-        async def process_with_semaphore(q):
-            async with semaphore:
-                result = await infer_one_azure(q, credential)
-                if result:
-                    save_result_atomic(result, output_file, lock)
-                return result
+        bar = tqdm(total=len(pending_queries), desc="Processing", unit="item")
 
-        tasks = [process_with_semaphore(q) for q in pending_queries]
+        tasks = [
+            asyncio.create_task(
+                infer_one_azure(q, credential, semaphore, write_lock, bar)
+            )
+            for q in pending_queries
+        ]
 
-        # Use tqdm for progress tracking
-        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="Processing"):
-            await coro
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            if bar:
+                bar.close()
 
     # Run async tasks
     asyncio.run(run_all_azure())
@@ -306,7 +336,6 @@ def parallel_inference_gpt(
 
     # Determine which backend to use
     should_use_azure = use_azure if use_azure is not None else getattr(resolved_config, 'use_azure', False)
-
     if should_use_azure:
         logger.info("Using Azure OpenAI backend")
         return _parallel_inference_gpt_azure(
