@@ -132,33 +132,33 @@ class ModelEvaluator:
                 type=model_type
             )
 
-        # Evaluate responses
-        scores = []
-        if dataset_type == "general":
-            # Use llm_judge_general for general datasets (consistent with evaluate_single_dataset)
-            questions = [{"instruction": item['instruction']} for item in data]
-            answers = [{"response": response} for response in responses]
-            ref_answers = [{"response": item.get('response', '')} for item in data]
-            scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=self.max_workers)
-        else:
-            # Process non-general datasets individually
-            for item, response in zip(data, responses):
-                gold_response = item.get('response', '')
-                is_correct = self.loss_calc._evaluate_response(
-                    response, gold_response, item['instruction'], dataset_type
-                )
-                score = 1.0 if is_correct else 0.0
-                scores.append(score)
+        # # Evaluate responses
+        # scores = []
+        # if dataset_type == "general":
+        #     # Use llm_judge_general for general datasets (consistent with evaluate_single_dataset)
+        #     questions = [{"instruction": item['instruction']} for item in data]
+        #     answers = [{"response": response} for response in responses]
+        #     ref_answers = [{"response": item.get('response', '')} for item in data]
+        #     scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=self.max_workers)
+        # else:
+        #     # Process non-general datasets individually
+        #     for item, response in zip(data, responses):
+        #         gold_response = item.get('response', '')
+        #         is_correct = self.loss_calc._evaluate_response(
+        #             response, gold_response, item['instruction'], dataset_type
+        #         )
+        #         score = 1.0 if is_correct else 0.0
+        #         scores.append(score)
 
         # Build results
         results = []
-        for i, (item, response, score) in enumerate(zip(data, responses, scores)):
+        for i, (item, response) in enumerate(zip(data, responses)):
             result = {
                 "id": i,
                 "instruction": item["instruction"],
                 "response": item.get("response", ""),
                 "generated_response": response,
-                "score": score,
+                # "score": score,
                 "dataset": dataset_name,
                 "dataset_type": dataset_type
             }
