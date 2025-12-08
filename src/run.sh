@@ -57,3 +57,26 @@ echo "  - Logits:    ../hs/"
 echo "  - 模型:      probe_save/test/"
 echo "  - 训练历史:   probe_save/loss/"
 echo "  - 评估结果:   metric_results/eval/"
+
+
+# ========================================
+# 启动模型服务
+# cd inference
+# ts --gpu_indices 0,1,2,3 python start.py \
+#   --model_path "/mnt/yixiali/MODELS/meta-llama/Llama-3.1-8B-Instruct" \
+#   --base_port 8001 \
+#   --gpu_list "0,1,2,3"
+
+
+# ts -G 1 vllm serve IAAR-Shanghai/xVerify-9B-C \
+#   --host 0.0.0.0 \
+#   --port 8000 \
+#   --tensor-parallel-size 1 \
+#   --served-model-name xVerify \
+#   --trust-remote-code
+
+
+
+# conda activate;cd src
+# ts bash run.sh alpaca_10k
+# ts bash run.sh big_math_10k
