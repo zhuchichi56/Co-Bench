@@ -12,7 +12,7 @@ class DatasetConfig:
         self.name = name
         self.type = type  # "mmlu", "math", "general"
         self.file_path = file_path
-        
+
 
 
 class DatasetRegistry:
@@ -35,7 +35,7 @@ class DatasetRegistry:
         "mmlu_pro_physics": DatasetConfig("mmlu_pro_physics", "mmlu", "mmlu_pro/physics_converted.jsonl"),
         "mmlu_pro_psychology": DatasetConfig("mmlu_pro_psychology", "mmlu", "mmlu_pro/psychology_converted.jsonl"),
 
-        
+
         "math": DatasetConfig("math", "math", "math.jsonl"),
         "gsm8k": DatasetConfig("gsm8k", "math", "gsm8k.jsonl"),
         "aime24": DatasetConfig("aime24", "math", "AIME_2024.jsonl"),
@@ -62,6 +62,9 @@ class DatasetRegistry:
          "big_math_5k_train": DatasetConfig("big_math_5k_train", "math", "big_math_5k_train.jsonl"),
          "big_math_5k_test": DatasetConfig("big_math_5k_test", "math", "big_math_5k_test.jsonl"),
          "test": DatasetConfig("test", "general", "test.jsonl"),
+         "alpaca_10k": DatasetConfig("alpaca_10k", "general", "alpaca_10k.jsonl"),
+         "big_math_10k": DatasetConfig("big_math_10k", "math", "big_math_10k.jsonl"),
+
     }
 
     @classmethod
@@ -114,7 +117,7 @@ class ModelEvaluator:
         self.data_loader = data_loader
         self.loss_calc = MultiModalLossCalculator(model=None, tokenizer=None, device=None, inference_config=inference_config)
         # Extract max_workers from inference_config if available
-        self.max_workers = inference_config.max_workers if inference_config and hasattr(inference_config, 'max_workers') else 32 
+        self.max_workers = inference_config.max_workers if inference_config and hasattr(inference_config, 'max_workers') else 32
 
     def evaluate_model(self, model_path: str, dataset_name: str,
                       max_tokens: int = 512, temperature: float = 0.0,
@@ -344,13 +347,13 @@ class DataManager:
         self.data_loader = DataLoader(data_dir, inference_config=inference_config)
         self.evaluator = ModelEvaluator(self.data_loader, inference_config=inference_config)
         self.output_dir = Path(output_dir)
-        # self.judge_model = 
-        # self.max_workers = 
-        
-        
+        # self.judge_model =
+        # self.max_workers =
 
-    def evaluate_models_on_datasets(self, 
-                                    small_model_path: str, 
+
+
+    def evaluate_models_on_datasets(self,
+                                    small_model_path: str,
                                     large_model_path: str,
                                   datasets: List[str], **kwargs) -> Dict[str, Dict]:
         results = {}
@@ -367,15 +370,15 @@ class DataManager:
             small_output = small_dir / f"{dataset}.jsonl"
             large_output = large_dir / f"{dataset}.jsonl"
             small_results, large_results = self.evaluator.evaluate_dataset(
-                small_model_path=small_model_path, 
-                large_model_path=large_model_path, 
+                small_model_path=small_model_path,
+                large_model_path=large_model_path,
                 dataset_name=dataset,
                 small_output_path=str(small_output),
                 large_output_path=str(large_output),
                 **kwargs
             )
 
-            
+
 
             results[dataset] = {
                 "small_results": small_results,
