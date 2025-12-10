@@ -302,13 +302,13 @@ class ModelEvaluator:
         # Batch evaluation for general datasets
         if dataset_type == "general":
             questions = [{"instruction": item['instruction']} for item in data]
-            answers = [{"response": entry.get('generated_response', '')} for entry in generated]
+            answers = [{"response": entry.get('generated_response', entry.get('large_response', ''))} for entry in generated]
             ref_answers = [{"response": item.get('response', '')} for item in data]
             scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=self.max_workers)
         else:
             # Process non-general datasets individually
             for item, entry in zip(data, generated):
-                response = entry.get('generated_response', '')
+                response = entry.get('generated_response', entry.get('large_response', ''))
                 gold_response = item.get('response', '')
                 is_correct = self.loss_calc._evaluate_response(
                     response, gold_response, item['instruction'], dataset_type
@@ -322,7 +322,7 @@ class ModelEvaluator:
                 "id": i,
                 "instruction": item["instruction"],
                 "response": item.get('response', ''),
-                "generated_response": entry.get('generated_response', ''),
+                "generated_response": entry.get('generated_response', entry.get('large_response', '')),
                 "score": score,
                 "dataset": dataset_name,
                 "dataset_type": dataset_type
