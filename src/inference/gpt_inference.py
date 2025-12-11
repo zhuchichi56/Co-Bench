@@ -126,10 +126,12 @@ def _parallel_inference_gpt_openai(
                 max_tokens=max_tokens,
                 **kwargs
             )
+            content = response.choices[0].message.content
+           
             return {
                 "query_id": query["query_id"],
                 "instruction": query["instruction"],
-                "response": response.choices[0].message.content,
+                "response": content,
             }
         except Exception as e:
             logger.error(f"Error for query_id {query.get('query_id')}: {e}")
@@ -146,6 +148,8 @@ def _parallel_inference_gpt_openai(
             result = future.result()
             if result:
                 save_result_atomic(result, output_file, lock)
+
+   
 
     # Load all results in order
     loaded = load_responses_from_file(output_file, queries)

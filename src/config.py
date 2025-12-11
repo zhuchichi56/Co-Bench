@@ -114,6 +114,7 @@ class TrainingConfig:
 
     # Probe architecture parameters
     mlp_hidden_dims: Optional[List[int]] = None  # Hidden dimensions for MLP probe, e.g., [512, 256]
+    mlp_dropout: float = 0.1  # Dropout rate for MLP probe layers
     conv_channels: int = 32  # Number of channels for ConvProbe
     conv_kernel_size: int = 3  # Kernel size for ConvProbe
     transformer_num_heads: int = 4  # Number of attention heads for TransformerProbe

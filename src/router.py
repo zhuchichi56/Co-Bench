@@ -256,7 +256,7 @@ class ZScoreNormalizer:
 
 # TODO:多加几层
 class MLPProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1):
         super().__init__()
         if hidden_dims is None or len(hidden_dims) == 0:
             # Single linear layer (original behavior)
@@ -268,7 +268,7 @@ class MLPProbe(nn.Module):
             for hidden_dim in hidden_dims:
                 layers.append(nn.Linear(prev_dim, hidden_dim))
                 layers.append(nn.ReLU())
-                layers.append(nn.Dropout(0.1))
+                layers.append(nn.Dropout(dropout))
                 prev_dim = hidden_dim
             layers.append(nn.Linear(prev_dim, output_dim))
             self.net = nn.Sequential(*layers)
@@ -294,7 +294,7 @@ class ConvProbe(nn.Module):
 
 
 class MeanProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, **kwargs):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1, **kwargs):
         super().__init__()
         if hidden_dims is None or len(hidden_dims) == 0:
             # Single linear layer (original behavior)
@@ -307,7 +307,7 @@ class MeanProbe(nn.Module):
             for hidden_dim in hidden_dims:
                 layers.append(nn.Linear(prev_dim, hidden_dim))
                 layers.append(nn.ReLU())
-                layers.append(nn.Dropout(0.1))
+                layers.append(nn.Dropout(dropout))
                 prev_dim = hidden_dim
             layers.append(nn.Linear(prev_dim, output_dim))
             self.fc = nn.Sequential(*layers)
@@ -317,7 +317,7 @@ class MeanProbe(nn.Module):
 
 
 class MaxProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, **kwargs):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1, **kwargs):
         super().__init__()
         if hidden_dims is None or len(hidden_dims) == 0:
             # Single linear layer (original behavior)
@@ -329,7 +329,7 @@ class MaxProbe(nn.Module):
             for hidden_dim in hidden_dims:
                 layers.append(nn.Linear(prev_dim, hidden_dim))
                 layers.append(nn.ReLU())
-                layers.append(nn.Dropout(0.1))
+                layers.append(nn.Dropout(dropout))
                 prev_dim = hidden_dim
             layers.append(nn.Linear(prev_dim, output_dim))
             self.fc = nn.Sequential(*layers)
@@ -339,7 +339,7 @@ class MaxProbe(nn.Module):
 
 
 class MeanMaxProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, **kwargs):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1, **kwargs):
         super().__init__()
         # Input dimension is doubled because we concatenate mean and max
         combined_input_dim = input_dim * 2
@@ -354,7 +354,7 @@ class MeanMaxProbe(nn.Module):
             for hidden_dim in hidden_dims:
                 layers.append(nn.Linear(prev_dim, hidden_dim))
                 layers.append(nn.ReLU())
-                layers.append(nn.Dropout(0.1))
+                layers.append(nn.Dropout(dropout))
                 prev_dim = hidden_dim
             layers.append(nn.Linear(prev_dim, output_dim))
             self.fc = nn.Sequential(*layers)

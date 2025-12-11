@@ -19,12 +19,12 @@ inference:
   strong_gpu_ids: [1, 0]
   weak_gpu_ids: [0,1,2,3]
 
-  openai_api_key: "sk-Iorkt1JndcIRHiEpDbC392Be199e411c8202E78669Cf685d"
+  openai_api_key: "sk-0lfXYxvFL5AsB7UgE301D3E409A24243852aC8359d22E313"
   openai_api_base: "https://api.ai-gaochao.cn/v1"
   judge_model: "gpt-5"
 
   # Azure OpenAI configuration
-  use_azure: true  # Set to true to use Azure OpenAI, false for OpenAI API
+  use_azure: false  # Set to true to use Azure OpenAI, false for OpenAI API
 
   max_workers: 1024
   batch_size: 8
@@ -41,8 +41,8 @@ inference:
 router:
   router_type: "probe"
   # checkpoint_path: "probe_save_dynamic/base/numina_cot_5k_train_dirichlet_probe.pt"
-  checkpoint_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/one_dataset/mixed_alpaca_5k_train_math_mmlu_train_hs_last_mlp.pt"
-  probe_type: "hs_last_mlp" # "coe_dual_mlp"  "hs_mlp" “dynamic_dirichlet” "dynamic_softmax"
+  checkpoint_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/base/probe/12000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt"
+  probe_type: "mean" # "coe_dual_mlp"  "hs_mlp" “dynamic_dirichlet” "dynamic_softmax"
   model_path: null
 
 training:
@@ -52,9 +52,10 @@ training:
 
   # Probe architecture parameters
   # mlp_hidden_dims: [64]  # Hidden layers for MLP probe, set to null or [] for single layer
+  # mlp_dropout: 0.5  # Dropout rate for MLP probe layers
 
   reward_model_name: "microsoft/deberta-v3-base"
   reward_output_dir: "reward_model"
   logits_output_dir: "../hs"
-  probe_save_path: "probe_save/qwen/"
+  probe_save_path: "probe_save/base/probe"
   seed: 42

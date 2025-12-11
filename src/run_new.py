@@ -216,7 +216,6 @@ if __name__ == '__main__':
             print(f"🎯 训练 Probe 类型: {probe_type}")
             print(f"{'='*60}")
 
-            config.training.probe_save_path = "./probe_save/test/"
             config.router.probe_type = probe_type
 
             try:
@@ -285,7 +284,7 @@ if __name__ == '__main__':
         else:
             for probe_type in probe_types:
                 print(f"\n{'='*60}")
-                print(f"�� 使用 Probe 类型: {probe_type}")
+                print(f" 使用 Probe 类型: {probe_type}")
                 print(f"{'='*60}")
 
                 config_copy = copy.deepcopy(config)

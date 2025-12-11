@@ -111,6 +111,8 @@ class ProbeTrainer:
             # MLP probes (including mean/max probes that support MLP structure)
             if "mlp_hidden_dims" in self.probe_config and self.probe_config["mlp_hidden_dims"]:
                 kwargs["hidden_dims"] = self.probe_config["mlp_hidden_dims"]
+            if "mlp_dropout" in self.probe_config:
+                kwargs["dropout"] = self.probe_config["mlp_dropout"]
 
         elif self.probe_type == "pca_conv":
             # Conv probe
@@ -723,6 +725,7 @@ def complete_probe_training_pipeline_with_mixed_datasets(
     # Extract probe configuration from training config
     probe_config = {
         "mlp_hidden_dims": config.training.mlp_hidden_dims,
+        "mlp_dropout": config.training.mlp_dropout,
         "conv_channels": config.training.conv_channels,
         "conv_kernel_size": config.training.conv_kernel_size,
         "transformer_num_heads": config.training.transformer_num_heads,
@@ -737,7 +740,7 @@ def complete_probe_training_pipeline_with_mixed_datasets(
         filename = custom_save_name if custom_save_name.endswith('.pt') else f"{custom_save_name}.pt"
     else:
         task_suffix = "_".join(sorted(task_list))
-        sample_suffix = f"_{max_samples}samples" if max_samples else ""
+        sample_suffix = f"{max_samples}samples" if max_samples else ""
         filename = f"{sample_suffix}_mixed_{task_suffix}_{probe_type}.pt"
 
     save_path = os.path.join(save_dir, filename)
@@ -823,6 +826,7 @@ def complete_layerwise_probe_training_pipeline(config: PipelineConfig, task_list
     # Extract probe configuration from training config
     probe_config = {
         "mlp_hidden_dims": config.training.mlp_hidden_dims,
+        "mlp_dropout": config.training.mlp_dropout,
         "conv_channels": config.training.conv_channels,
         "conv_kernel_size": config.training.conv_kernel_size,
         "transformer_num_heads": config.training.transformer_num_heads,

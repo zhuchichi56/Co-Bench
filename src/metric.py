@@ -15,7 +15,7 @@ class ReliableMetrics:
         small_scores = small_scores[:min_len]
         large_scores = large_scores[:min_len]
         router_scores = router_scores[:min_len]
-        if np.any(large_scores > 1) or np.any(small_scores > 1):
+        if np.any(large_scores > 5) or np.any(small_scores > 5):
             # 如果有分数大于1，就看小模型是否 >= 大模型
             labels = (small_scores >= large_scores).astype(int)
         else:

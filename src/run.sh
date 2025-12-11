@@ -4,14 +4,21 @@
 source /volume/pt-train/users/wzhang/ghchen/zh/miniconda3/bin/activate router
 
 # 默认参数
-DATASETS="${1:- alpaca_10k}"
-PROBE_TYPES="${2:- mean}" #hs_last_mlp mean max
-MAX_SAMPLES="${3:-10000}"
+DATASETS="${1:- alpaca_5k_test}"
+PROBE_TYPES="${2:- mean}"
+MAX_SAMPLES="${3:-12000}"
+
+# MMLU Pro 测试数据集
+MMLU_PRO_TASKS="mmlu_pro_biology mmlu_pro_business mmlu_pro_chemistry mmlu_pro_computer_science mmlu_pro_economics mmlu_pro_engineering mmlu_pro_health mmlu_pro_history mmlu_pro_law mmlu_pro_math mmlu_pro_other mmlu_pro_philosophy mmlu_pro_physics mmlu_pro_psychology"
+
+# 完整测试数据集列表
+TEST_DATASETS="${4:-math mmlu_pro_biology mmlu_pro_business mmlu_pro_chemistry mmlu_pro_computer_science mmlu_pro_economics mmlu_pro_engineering mmlu_pro_health mmlu_pro_history mmlu_pro_law mmlu_pro_math mmlu_pro_other mmlu_pro_philosophy mmlu_pro_physics mmlu_pro_psychology magpie_5k_test alpaca_5k_test big_math_5k_test mmlu_test}"
 
 echo "========================================="
 echo "CoBench 完整 Pipeline"
 echo "========================================="
-echo "数据集: $DATASETS"
+echo "训练数据集: $DATASETS"
+echo "测试数据集: $TEST_DATASETS"
 echo "Probe 类型: $PROBE_TYPES"
 echo "最大样本数: $MAX_SAMPLES"
 
@@ -41,11 +48,12 @@ python run_new.py --mode get_scores --datasets $DATASETS
 # # # logits
 # python run_new.py --mode get_logits --datasets $DATASETS
 # # training probe
-# python run_new.py --mode train --datasets $DATASETS --probe_types $PROBE_TYPES --max_samples $MAX_SAMPLES --save_loss_history
+# python run_new.py --mode train --datasets $DATASETS --probe_types $PROBE_TYPES --max_samples $MAX_SAMPLES #--save_loss_history
 
 
 # # 评估
-# python run.py --mode eval_probe --datasets $DATASETS --probe_types $PROBE_TYPES
+# python run_new.py --mode eval_probe --datasets $TESTASETS --probe_types $PROBE_TYPES
+# python run_new.py --mode logits_based_routers --datasets $TEST_DATASETS 
 
 echo ""
 echo "========================================="

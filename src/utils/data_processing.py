@@ -7,127 +7,153 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-def load_individual_datasets(base_dir):
-    """读取单独数据集的metrics.json文件"""
-    
-    datasets = ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]
-    
+def extract_method_from_dirname(dirname):
+    """从目录名中提取方法名
+    例如: alpaca_5k_test_coe -> coe
+         mmlu_pro_biology_entropy -> entropy
+    """
+    known_methods = [
+        "coe", "entropy", "confidence_margin", "max_logits",
+        "top10_variance", "semantic_entropy", "self_questioning",
+        "dynamic_dirichlet", "probe"
+    ]
+
+    for method in known_methods:
+        if dirname.endswith(f"_{method}"):
+            return method
+
+    return None
+
+def extract_dataset_from_dirname(dirname, method):
+    """从目录名中提取数据集名
+    例如: alpaca_5k_test_coe (method=coe) -> alpaca_5k_test
+         mmlu_pro_biology_entropy (method=entropy) -> mmlu_pro_biology
+    """
+    if method and dirname.endswith(f"_{method}"):
+        return dirname[:-len(f"_{method}")]
+    return dirname
+
+def load_individual_datasets(method_dir, method_name):
+    """读取单独数据集的metrics.json文件
+
+    Args:
+        method_dir: 方法目录路径，例如 .../base/coe
+        method_name: 方法名，例如 coe
+    """
+
+    # 标准数据集名（不包含_test后缀的也要匹配）
+    target_datasets = ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]
+
     results = {}
-    
-    for dataset in datasets:
-        dataset_dir = None
-        for item in os.listdir(base_dir):
-            if item.startswith(f"{dataset}_"):
-                dataset_dir = item
-                break
-        
-        if dataset_dir is None and "semantic_entropy" in base_dir:
-            for item in os.listdir(base_dir):
-                if item == f"{dataset}_semantic_entropy":
-                    dataset_dir = item
-                    break
-        
-        if dataset_dir is None:
-            print(f"Warning: Directory for {dataset} not found in {base_dir}")
-            results[dataset] = None
+
+    # 遍历方法目录下的所有文件夹
+    for item in os.listdir(method_dir):
+        item_path = os.path.join(method_dir, item)
+        if not os.path.isdir(item_path):
             continue
-        
-        metrics_file = os.path.join(base_dir, dataset_dir, "metrics.json")
+
+        # 提取数据集名
+        dataset_name = extract_dataset_from_dirname(item, method_name)
+
+        # 检查是否是目标数据集（不是mmlu_pro）
+        if dataset_name not in target_datasets:
+            continue
+
+        metrics_file = os.path.join(item_path, "metrics.json")
         if os.path.exists(metrics_file):
             try:
                 with open(metrics_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                
+
                 metrics = {
                     "auroc": data["reliable_metrics"]["auroc"],
                     "LPM": data["adaptive_metrics"]["LPM"],
-                    "HPM": data["adaptive_metrics"]["HPM"], 
+                    "HPM": data["adaptive_metrics"]["HPM"],
                     "MPM": data["adaptive_metrics"]["MPM"]
                 }
-                
-                if dataset in ["magpie_5k_test", "alpaca_5k_test"]:
-                    metrics["LPM"] = metrics["LPM"] / 10
-                    metrics["MPM"] = metrics["MPM"] / 10
-                
-                results[dataset] = metrics
-                
+
+                results[dataset_name] = metrics
+
             except Exception as e:
                 print(f"Error reading {metrics_file}: {e}")
-                results[dataset] = None
+                results[dataset_name] = None
         else:
             print(f"Metrics file not found: {metrics_file}")
+            results[dataset_name] = None
+
+    # 补充未找到的数据集为None
+    for dataset in target_datasets:
+        if dataset not in results:
             results[dataset] = None
-    
+
     return results
 
-def load_mmlu_pro_categories(base_dir):
-    """读取MMLU Pro分类数据"""
-    
+def load_mmlu_pro_categories(method_dir, method_name):
+    """读取MMLU Pro分类数据
+
+    Args:
+        method_dir: 方法目录路径，例如 .../base/coe
+        method_name: 方法名，例如 coe
+    """
+
     categories = {
         "STEM": ["biology", "chemistry", "computer_science", "engineering", "math", "physics"],
-        "Humanities": ["history", "philosophy"],  
+        "Humanities": ["history", "philosophy"],
         "Social Science": ["economics", "law", "psychology"],
         "Other": ["business", "health", "other"]
     }
-    
+
     category_results = defaultdict(list)
-    
-    for item in os.listdir(base_dir):
-        if item.startswith("mmlu_pro_"):
-            temp = item.replace("mmlu_pro_", "")
-            
-            if temp.endswith("self_questioning"):
-                subject = temp.rsplit("_", 2)[0]
-            elif temp.endswith("semantic_entropy"):
-                subject = temp.rsplit("_", 2)[0]
-            elif temp.endswith("confidence_margin"):
-                subject = temp.rsplit("_", 2)[0]
-            elif temp.endswith("top10_variance"):
-                subject = temp.rsplit("_", 2)[0]
-            elif temp.endswith("max_logits"):
-                subject = temp.rsplit("_", 2)[0]
-            elif temp.endswith("dynamic_dirichlet"):
-                subject = temp.rsplit("_", 2)[0] 
-            else:
-                known_suffixes = {"confidence", "max", "top10", "variance", "entropy", "coe"}
-                parts = temp.split("_")
-                if parts and parts[-1] in known_suffixes:
-                    subject = "_".join(parts[:-1])
-                else:
-                    subject = temp.rsplit("_", 1)[0] if "_" in temp else temp
-            
-            category = None
-            for cat, subjects in categories.items():
-                if subject in subjects:
-                    category = cat
-                    break
-            
-            if category is None:
-                print(f"Warning: Subject '{subject}' not found in any category")
-                continue
-            
-            metrics_file = os.path.join(base_dir, item, "metrics.json")
-            if os.path.exists(metrics_file):
-                try:
-                    with open(metrics_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    
-                    metrics = {
-                        "subject": subject,
-                        "auroc": data["reliable_metrics"]["auroc"],
-                        "LPM": data["adaptive_metrics"]["LPM"],
-                        "HPM": data["adaptive_metrics"]["HPM"],
-                        "MPM": data["adaptive_metrics"]["MPM"]
-                    }
-                    
-                    category_results[category].append(metrics)
-                    
-                except Exception as e:
-                    print(f"Error reading {metrics_file}: {e}")
-    
+
+    for item in os.listdir(method_dir):
+        item_path = os.path.join(method_dir, item)
+        if not os.path.isdir(item_path):
+            continue
+
+        # 提取数据集名
+        dataset_name = extract_dataset_from_dirname(item, method_name)
+
+        # 只处理mmlu_pro开头的
+        if not dataset_name.startswith("mmlu_pro_"):
+            continue
+
+        # 提取subject名字
+        subject = dataset_name.replace("mmlu_pro_", "")
+
+        # 找到对应的category
+        category = None
+        for cat, subjects in categories.items():
+            if subject in subjects:
+                category = cat
+                break
+
+        if category is None:
+            print(f"Warning: Subject '{subject}' not found in any category")
+            continue
+
+        metrics_file = os.path.join(item_path, "metrics.json")
+        if os.path.exists(metrics_file):
+            try:
+                with open(metrics_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+
+                metrics = {
+                    "subject": subject,
+                    "auroc": data["reliable_metrics"]["auroc"],
+                    "LPM": data["adaptive_metrics"]["LPM"],
+                    "HPM": data["adaptive_metrics"]["HPM"],
+                    "MPM": data["adaptive_metrics"]["MPM"]
+                }
+
+                category_results[category].append(metrics)
+
+            except Exception as e:
+                print(f"Error reading {metrics_file}: {e}")
+
+    # 计算每个category的平均值
     averages = {}
     category_order = ["STEM", "Humanities", "Social Science", "Other"]
-    
+
     for category in category_order:
         if category in category_results and category_results[category]:
             metrics_list = category_results[category]
@@ -139,7 +165,7 @@ def load_mmlu_pro_categories(base_dir):
             }
         else:
             averages[category] = None
-    
+
     return averages
 
 
@@ -158,15 +184,22 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
 
     # 方法分组映射
     method_groups = {
-        "semantic_entropy": ("Generation", "SemanticEntropy"),
-        "self_questioning": ("Generation", "SelfAsk"),
+        # Verb-based methods
+        "semantic_entropy": ("Verb", "SemanticEntropy"),
+        "self_questioning": ("Verb", "SelfAsk"),
+        # Logit-based methods
         "confidence_margin": ("Logit", "ConfidenceMargin"),
         "entropy": ("Logit", "Entropy"),
         "max_logits": ("Logit", "MaxLogits"),
-        "coe_dual": ("Probe", "ProbeCoE"),
-        "hs_last": ("Probe", "ProbeFinal"),
-        "mean": ("Probe", "ProbeMean"),
-        "dynamic": ("Probe", "DynamicDirichlet")
+        "top10_variance": ("Logit", "Top10Variance"),
+        # Probe-based methods
+        # "coe": ("Probe", "ProbeCoE"),
+        # "coe_dual": ("Probe", "ProbeCoE"),
+        # "hs_last": ("Probe", "ProbeFinal"),
+        # "mean": ("Probe", "ProbeMean"),
+        "probe": ("Probe", "Probe"),
+        # "dynamic": ("Probe", "DynamicDirichlet"),
+        # "dynamic_dirichlet": ("Probe", "DynamicDirichlet")
     }
 
     def fmt(x):
@@ -291,62 +324,77 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
 
     print("\\hline")
 
+def scan_methods(base_path):
+    """自动扫描base_path下的所有方法文件夹
+
+    Args:
+        base_path: 基础路径，例如 .../metric_results/base
+
+    Returns:
+        list: [(method_name, method_dir_path), ...]
+    """
+    methods = []
+
+    if not os.path.exists(base_path):
+        print(f"Error: Base path does not exist: {base_path}")
+        return methods
+
+    for item in os.listdir(base_path):
+        item_path = os.path.join(base_path, item)
+        # 只处理目录，跳过文件（如summary.json）
+        if os.path.isdir(item_path):
+            methods.append((item, item_path))
+
+    # 按方法名排序
+    methods.sort(key=lambda x: x[0])
+
+    return methods
+
+
 def main():
-    
-    base_directories = [
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/semantic_entropy",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/self_questioning",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/confidence_margin",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/entropy",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/max_logits",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/coe_dual_mlp",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/hs_last_mlp",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/mean",
-        "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base/dynamic_dirichlet"
-    ]
-    
+    # 基础路径
+    base_path = "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/base"
+
+    # 自动扫描所有方法
+    print(f"Scanning methods in: {base_path}")
+    methods = scan_methods(base_path)
+
+    if not methods:
+        print("No methods found!")
+        return
+
+    print(f"Found {len(methods)} methods:")
+    for method_name, method_path in methods:
+        print(f"  - {method_name}")
+
     all_path_results = []
-    
-    for i, base_dir in enumerate(base_directories):
-        print(f"\nLoading data from path {i+1}: {base_dir}")
-        
-        if not os.path.exists(base_dir):
-            print(f"Warning: Directory not found: {base_dir}")
-            all_path_results.append((
-                {dataset: None for dataset in ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]},
-                {category: None for category in ["STEM", "Humanities", "Social Science", "Other"]}
-            ))
-            continue
-        
+    method_names = []
+
+    for method_name, method_dir in methods:
+        print(f"\n{'='*80}")
+        print(f"Loading data for method: {method_name}")
+        print(f"{'='*80}")
+
         print("Loading individual dataset metrics...")
-        individual_results = load_individual_datasets(base_dir)
-        
+        individual_results = load_individual_datasets(method_dir, method_name)
+
         print("Loading MMLU Pro category metrics...")
-        mmlu_pro_averages = load_mmlu_pro_categories(base_dir)
-        
+        mmlu_pro_averages = load_mmlu_pro_categories(method_dir, method_name)
+
         all_path_results.append((individual_results, mmlu_pro_averages))
-        
+        method_names.append(method_name)
+
         print(f"Loaded {sum(1 for r in individual_results.values() if r is not None)} individual datasets")
         print(f"Loaded {sum(1 for r in mmlu_pro_averages.values() if r is not None)} MMLU Pro categories")
-    
+
+    # 打印对比表格
     metrics = ["auroc", "LPM", "HPM", "MPM"]
-    method_names = [
-        "semantic_entropy",
-        "self_questioning",
-        "confidence_margin",
-        "entropy",
-        "max_logits",
-        "coe_dual",
-        "hs_last",
-        "mean",
-        "dynamic"
-    ]
 
     for metric in metrics:
         print(f"\n{'='*100}")
         print(f"Processing {metric.upper()}")
         print(f"{'='*100}")
-        
+
         print_metric_comparison_table(all_path_results, metric, method_names)
         print("\n" + "="*100)
 
