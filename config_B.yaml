@@ -15,9 +15,9 @@ inference:
   top_p: 0.9
   skip_special_tokens: true
 
-  base_port: 8000  # Different port for Machine B
-  strong_gpu_ids: [1, 0]
-  weak_gpu_ids: [1,2,4,6]
+  base_port: 8001  # Different port for Machine B
+  strong_gpu_ids: [1,0]
+  weak_gpu_ids: [4,5]
 
   openai_api_key: "sk-e9OcUwV80NLvl00o73E5F3FcFa2d4a6cB7D46cB3D6263a1a"
   openai_api_base: "https://api.ai-gaochao.cn/v1"
@@ -30,7 +30,7 @@ inference:
   batch_size: 8
   template_type: "default"
   system_prompt: "You are a helpful AI assistant."
-  cuda_visible_devices: "1,2,4,6,7"
+  cuda_visible_devices: "4,5,6,7"
 
   # xVerify model configuration for math evaluation
   xverify_model_name: "xVerify"

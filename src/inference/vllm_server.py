@@ -151,24 +151,30 @@ if __name__ == "__main__":
                       max_model_len=config["max_model_len"],
                       gpu_memory_utilization=0.95)
         elif model_key in ["qwen3"] and "max_model_len" in config:
-            # 读取自定义 chat template
-            import os
-            template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")
-            with open(template_path, "r") as f:
-                chat_template_content = f.read()
+            # 加载 qwen3 模型
             llm = LLM(model=model_path,
                       tokenizer_mode="auto",
                       trust_remote_code=True,
                       max_model_len=config["max_model_len"],
-                      chat_template=chat_template_content,
                       gpu_memory_utilization=0.95)
+            # 加载后修改 tokenizer 的 chat_template
+            import os
+            template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")
+            with open(template_path, "r") as f:
+                chat_template_content = f.read()
+            tokenizer = llm.get_tokenizer()
+            tokenizer.chat_template = chat_template_content
+            logger.info(f"Custom chat template loaded from {template_path}")
         else:
             # 对于未知模型或不需要max_model_len的模型，使用默认配置
             llm = LLM(model=model_path,
                       tokenizer_mode="auto",
                       trust_remote_code=True,
                       gpu_memory_utilization=0.95)
-        tokenizer = llm.get_tokenizer()
+
+        # 对于非 qwen3，在这里获取 tokenizer
+        if model_key not in ["qwen3"]:
+            tokenizer = llm.get_tokenizer()
         logger.info(f"Model {model_path} loaded successfully")
     except Exception as e:
         print(f"Error loading model: {str(e)}")

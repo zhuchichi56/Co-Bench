@@ -4,7 +4,7 @@
 source /volume/pt-train/users/wzhang/ghchen/zh/miniconda3/bin/activate router
 
 # 默认参数
-DATASETS="${1:- mmlu_train big_math_5k_train}"
+DATASETS="${1:- mmlu_subset}"
 PROBE_TYPES="${2:-dynamic_dirichlet}"
 MAX_SAMPLES="${3:-8000}"
 
@@ -27,10 +27,11 @@ echo "最大样本数: $MAX_SAMPLES"
 # ========================================
 # 启动模型服务
 # cd inference
+# vllm serve /volume/pt-train/users/wzhang/ghchen/zh/models/Qwen3-8B --chat-template ./qwen3_nonthinking.jinja
 #  python start.py \
-#   --model_path "/mnt/yixiali/MODELS/meta-llama/Llama-3.1-8B-Instruct" \
+#   --model_path "/volume/pt-train/users/wzhang/ghchen/zh/models/Qwen3-8B" \
 #   --base_port 8001 \
-#   --gpu_list "1"
+#   --gpu_list "4,5"
 
 
 

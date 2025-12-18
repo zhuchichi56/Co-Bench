@@ -150,6 +150,16 @@ def parallel_inference(prompt_list: List[str],
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
+
+        # 如果是 qwen3 模型，加载自定义 chat template
+        if "qwen3" in model_name_or_path.lower():
+            import os
+            template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")
+            if os.path.exists(template_path):
+                with open(template_path, "r") as f:
+                    tokenizer.chat_template = f.read()
+                logger.info(f"Loaded custom chat template for Qwen3 from {template_path}")
+
         return asyncio.run(distribute_requests(prompt_list,
                                                 max_tokens,
                                                 temperature,
@@ -172,6 +182,16 @@ def parallel_inference_instagger(
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
+    # 如果是 qwen3 模型，加载自定义 chat template
+    if "qwen3" in model_name_or_path.lower():
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")
+        if os.path.exists(template_path):
+            with open(template_path, "r") as f:
+                tokenizer.chat_template = f.read()
+            logger.info(f"Loaded custom chat template for Qwen3 from {template_path}")
+
     return asyncio.run(
         distribute_requests(
             prompt_list,
