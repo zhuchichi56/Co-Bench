@@ -195,10 +195,10 @@ class LLMRouter(Router):
         # Prompt template for difficulty assessment
         prompt_template = """Below is an instruction that describes a task. Write a response that appropriately completes the request.
 
-### Instruction:
-On a scale of 0.0 to 1.0, rate the difficulty of this question where 0.0 means very easy and 1.0 means very difficult: {question}
+    ### Instruction:
+    On a scale of 0.0 to 1.0, rate the difficulty of this question where 0.0 means very easy and 1.0 means very difficult: {question}
 
-### Response:"""
+    ### Response:"""
 
         with torch.no_grad():
             for item in data:
@@ -390,19 +390,33 @@ class TransformerProbe(nn.Module):
 
 class DynamicFusionProbe(nn.Module):
     """动态融合每一层信号的probe，支持softmax和Dirichlet两种方法"""
-    def __init__(self, input_dim: int, num_layers: int, output_dim: int = 1, probe_type: str = "softmax"):
+    def __init__(self, input_dim: int, num_layers: int, output_dim: int = 1, probe_type: str = "softmax",
+                 use_input_dependent: bool = False):
         super().__init__()
         self.num_layers = num_layers
         self.input_dim = input_dim
         self.probe_type = probe_type
+        self.use_input_dependent = use_input_dependent
 
         if probe_type == "softmax":
             # 原始方法：每层的权重参数，可学习
             self.layer_weights = nn.Parameter(torch.ones(num_layers))
         elif probe_type == "dirichlet":
-            # Dirichlet方法：学习浓度参数
-            self.concentration_logits = nn.Parameter(torch.ones(num_layers))  # 学习log(α)
-            self.global_concentration = nn.Parameter(torch.tensor(1.0))  # 学习β₀
+            if use_input_dependent:
+                # 输入依赖版本：通过网络计算 β(x)
+                # 使用网络将输入映射到浓度参数
+                hidden_dim = max(num_layers * 2, 64)
+                self.concentration_network = nn.Sequential(
+                    nn.Linear(input_dim, hidden_dim),
+                    nn.ReLU(),
+                    nn.Dropout(0.1),
+                    nn.Linear(hidden_dim, num_layers),
+                    nn.Softplus()  # 确保输出为正数
+                )
+            else:
+                # 原版本：固定的全局浓度参数（向后兼容）
+                self.concentration_logits = nn.Parameter(torch.ones(num_layers))  # 学习log(α)
+                self.global_concentration = nn.Parameter(torch.tensor(1.0))  # 学习β₀
         else:
             raise ValueError(f"Unknown probe_type: {probe_type}")
 
@@ -444,27 +458,45 @@ class DynamicFusionProbe(nn.Module):
 
         elif self.probe_type == "dirichlet":
             # Dirichlet方法：从Dirichlet分布采样权重
-            # 计算浓度参数: α = β₀ * softmax(concentration_logits)
-            base_concentration = torch.softmax(self.concentration_logits, dim=0)  # [num_layers]
-            concentration = torch.exp(self.global_concentration) * base_concentration  # [num_layers]
+            if self.use_input_dependent:
+                # 输入依赖版本：β(x) 根据输入计算
+                # 使用 mean pooling 作为输入特征
+                input_features = hidden_states.mean(dim=1)  # [batch_size, input_dim]
+                concentration = self.concentration_network(input_features)  # [batch_size, num_layers]
+                # 添加小的常数避免数值不稳定
+                concentration = concentration + 1e-6
+            else:
+                # 原版本：固定的全局浓度参数
+                base_concentration = torch.softmax(self.concentration_logits, dim=0)  # [num_layers]
+                concentration = torch.exp(self.global_concentration) * base_concentration  # [num_layers]
+                # 扩展到 batch 维度以统一后续处理
+                concentration = concentration.unsqueeze(0).expand(batch_size, -1)  # [batch_size, num_layers]
 
             if self.training:
                 # 训练时：从Dirichlet分布采样
-                dirichlet_dist = Dirichlet(concentration)
-                weights = dirichlet_dist.rsample((batch_size,))  # [batch_size, num_layers]
-                weights_for_fusion = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
+                # 对每个样本使用其对应的 concentration
+                weights_list = []
+                uncertainty_list = []
+                for i in range(batch_size):
+                    dirichlet_dist = Dirichlet(concentration[i])
+                    sample_weights = dirichlet_dist.rsample()  # [num_layers]
+                    weights_list.append(sample_weights)
+                    uncertainty_list.append(dirichlet_dist.entropy())  # scalar
 
-                # 计算不确定性：使用熵
-                uncertainty = dirichlet_dist.entropy()  # [batch_size]
+                weights = torch.stack(weights_list, dim=0)  # [batch_size, num_layers]
+                uncertainty = torch.stack(uncertainty_list, dim=0)  # [batch_size]
+                weights_for_fusion = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
             else:
-                # 推理时：使用期望值
-                weights = (concentration / concentration.sum()).unsqueeze(0)  # [1, num_layers]
-                weights = weights.expand(batch_size, -1)  # [batch_size, num_layers]
+                # 推理时：使用期望值 ᾱ_l(x) = β_l(x) / Σβ_j(x)
+                beta_0 = concentration.sum(dim=1, keepdim=True)  # [batch_size, 1] - β₀(x)
+                weights = concentration / beta_0  # [batch_size, num_layers] - ᾱ(x)
                 weights_for_fusion = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
 
-                # 计算不确定性：基于浓度参数的总和
-                total_concentration = concentration.sum()
-                uncertainty = torch.log(total_concentration).expand(batch_size)
+                # 计算不确定性：使用 β₀(x) = Σβ_j(x)
+                # 大的 β₀(x) 表示高置信度（低不确定性）
+                # 小的 β₀(x) 表示低置信度（高不确定性）
+                # 使用负对数作为不确定性指标
+                uncertainty = -torch.log(beta_0.squeeze(1))  # [batch_size]
 
             # 加权融合
             fused_features = torch.sum(hidden_states * weights_for_fusion, dim=1)  # [batch_size, hidden_dim]
@@ -502,8 +534,9 @@ class DynamicFusionRouter(Router):
         num_layers = metadata.get("num_layers", 32)
         output_dim = metadata.get("output_dim", 1)
         probe_type = metadata.get("probe_type", self.probe_type)
+        use_input_dependent = metadata.get("use_input_dependent", False)  # 向后兼容
 
-        model = DynamicFusionProbe(input_dim, num_layers, output_dim, probe_type)
+        model = DynamicFusionProbe(input_dim, num_layers, output_dim, probe_type, use_input_dependent)
         # Compatibility: remap checkpoint keys between fc.* and net.* when needed
         try:
             expected_keys = set(model.state_dict().keys())
@@ -614,7 +647,8 @@ class ProbeRouter(Router):
             # 动态融合probe需要额外的参数
             num_layers = metadata.get("num_layers", 32)
             probe_method = "softmax" if self.probe_type == "dynamic_softmax" else "dirichlet"
-            model = model_class(input_dim, num_layers, output_dim, probe_method)
+            use_input_dependent = metadata.get("use_input_dependent", False)  # 向后兼容
+            model = model_class(input_dim, num_layers, output_dim, probe_method, use_input_dependent)
         elif self.probe_type == "pca_conv":
             model = model_class(input_dim, output_dim)
         elif self.probe_type == "transformer":

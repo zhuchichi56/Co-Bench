@@ -149,6 +149,7 @@ if __name__ == '__main__':
     parser.add_argument("--probe_dir", type=str, default=None,
                        help="Probe 模型目录路径（用于 eval_probe 模式）")
 
+
     args = parser.parse_args()
     mode = args.mode
     set_random_seed(args.seed)
@@ -243,7 +244,7 @@ if __name__ == '__main__':
         datasets = args.datasets 
         probe_types = args.probe_types
         probe_dir = args.probe_dir
-
+        
         print(f"🎯 评估 Probe 模型")
         print(f"📊 数据集: {datasets}")
         print(f"🔧 Probe 类型: {probe_types}")
@@ -272,7 +273,8 @@ if __name__ == '__main__':
                     probe_configs.append({
                         "checkpoint_path": pf,
                         "probe_type": detected_probe_type,
-                        "metric_results_dir": metric_results_dir
+                        "metric_results_dir": metric_results_dir,
+                    
                     })
 
             if probe_configs:

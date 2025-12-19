@@ -74,6 +74,7 @@ class RouterConfig:
     # Model router settings (self_questioning, deberta, trained_deberta, llm, logits_margin, semantic_entropy)
     model_path: Optional[str] = None
 
+
     # Semantic entropy specific settings
     num_samples: int = 5  # Number of samples for semantic entropy calculation
 

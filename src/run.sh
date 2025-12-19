@@ -4,7 +4,7 @@
 source /volume/pt-train/users/wzhang/ghchen/zh/miniconda3/bin/activate router
 
 # 默认参数
-DATASETS="${1:- mmlu_subset}"
+DATASETS="${1:- mmlu_train big_math_5k_train}"
 PROBE_TYPES="${2:-dynamic_dirichlet}"
 MAX_SAMPLES="${3:-8000}"
 
@@ -46,7 +46,7 @@ echo "最大样本数: $MAX_SAMPLES"
 
 # 等待模型服务启动完成后，运行 scores
 # scores
-python run_new.py --mode get_scores --datasets $DATASETS
+# python run_new.py --mode get_scores --datasets $DATASETS
 # # # logits
 # python run_new.py --mode get_logits --datasets $DATASETS
 # # training probe
@@ -54,7 +54,7 @@ python run_new.py --mode get_scores --datasets $DATASETS
 
 
 # # 评估
-# python run_new.py --mode eval_probe --datasets $TEST_DATASETS --probe_types $PROBE_TYPES
+python run_new.py --mode eval_probe --datasets $TEST_DATASETS --probe_types $PROBE_TYPES
 # python run_new.py --mode logits_based_routers --datasets $TEST_DATASETS 
 # python run_new.py --mode self_based --datasets $TEST_DATASETS 
 echo ""

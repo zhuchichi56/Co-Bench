@@ -14,19 +14,31 @@ import os
 class DynamicFusionProbe(nn.Module):
     """动态融合每一层信号的probe"""
     def __init__(self, input_dim: int, num_layers: int, output_dim: int = 1, probe_type: str = "softmax",
-                 mlp_hidden_dims: List[int] = None, dropout: float = 0.1):
+                 mlp_hidden_dims: List[int] = None, dropout: float = 0.1, use_input_dependent: bool = True):
         super().__init__()
         self.num_layers = num_layers
         self.input_dim = input_dim
         self.probe_type = probe_type
+        self.use_input_dependent = use_input_dependent
 
         if probe_type == "softmax":
             # 原始方法：每层的权重参数，可学习
             self.layer_weights = nn.Parameter(torch.ones(num_layers))
         elif probe_type == "dirichlet":
-            # Dirichlet方法：学习浓度参数
-            self.concentration_logits = nn.Parameter(torch.ones(num_layers))  # 学习log(α)
-            self.global_concentration = nn.Parameter(torch.tensor(1.0))  # 学习β₀
+            if use_input_dependent:
+                # 输入依赖版本：通过网络计算 β(x)
+                hidden_dim = max(num_layers * 2, 64)
+                self.concentration_network = nn.Sequential(
+                    nn.Linear(input_dim, hidden_dim),
+                    nn.ReLU(),
+                    nn.Dropout(0.1),
+                    nn.Linear(hidden_dim, num_layers),
+                    nn.Softplus()  # 确保输出为正数
+                )
+            else:
+                # 原版本：固定的全局浓度参数
+                self.concentration_logits = nn.Parameter(torch.ones(num_layers))  # 学习log(α)
+                self.global_concentration = nn.Parameter(torch.tensor(1.0))  # 学习β₀
         else:
             raise ValueError(f"Unknown probe_type: {probe_type}")
 
@@ -71,26 +83,39 @@ class DynamicFusionProbe(nn.Module):
 
         elif self.probe_type == "dirichlet":
             # Dirichlet方法：从Dirichlet分布采样权重
-            # 计算浓度参数: α = β₀ * softmax(concentration_logits)
-            base_concentration = torch.softmax(self.concentration_logits, dim=0)  # [num_layers]
-            concentration = torch.exp(self.global_concentration) * base_concentration  # [num_layers]
+            if self.use_input_dependent:
+                # 输入依赖版本：β(x) 根据输入计算
+                input_features = hidden_states.mean(dim=1)  # [batch_size, input_dim]
+                concentration = self.concentration_network(input_features)  # [batch_size, num_layers]
+                concentration = concentration + 1e-6  # 数值稳定性
+            else:
+                # 原版本：固定的全局浓度参数
+                base_concentration = torch.softmax(self.concentration_logits, dim=0)  # [num_layers]
+                concentration = torch.exp(self.global_concentration) * base_concentration  # [num_layers]
+                # 扩展到 batch 维度
+                concentration = concentration.unsqueeze(0).expand(batch_size, -1)  # [batch_size, num_layers]
 
             if self.training:
                 # 训练时：从Dirichlet分布采样
-                dirichlet_dist = Dirichlet(concentration)
-                weights = dirichlet_dist.rsample((batch_size,))  # [batch_size, num_layers]
+                weights_list = []
+                uncertainty_list = []
+                for i in range(batch_size):
+                    dirichlet_dist = Dirichlet(concentration[i])
+                    sample_weights = dirichlet_dist.rsample()  # [num_layers]
+                    weights_list.append(sample_weights)
+                    uncertainty_list.append(dirichlet_dist.entropy())
+
+                weights = torch.stack(weights_list, dim=0)  # [batch_size, num_layers]
+                uncertainty = torch.stack(uncertainty_list, dim=0)  # [batch_size]
+                weights = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
+            else:
+                # 推理时：使用期望值 ᾱ_l(x) = β_l(x) / Σβ_j(x)
+                beta_0 = concentration.sum(dim=1, keepdim=True)  # [batch_size, 1]
+                weights = concentration / beta_0  # [batch_size, num_layers]
                 weights = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
 
-                # 计算不确定性：使用熵
-                uncertainty = dirichlet_dist.entropy()  # [batch_size]
-            else:
-                # 推理时：使用期望值
-                weights = (concentration / concentration.sum()).unsqueeze(0).unsqueeze(-1)  # [1, num_layers, 1]
-                weights = weights.expand(batch_size, -1, -1)  # [batch_size, num_layers, 1]
-
-                # 计算不确定性：基于浓度参数的总和
-                total_concentration = concentration.sum()
-                uncertainty = torch.log(total_concentration).expand(batch_size)
+                # 不确定性：使用 -log(β₀(x))
+                uncertainty = -torch.log(beta_0.squeeze(1))  # [batch_size]
 
             # 加权融合
             fused_features = torch.sum(hidden_states * weights, dim=1)  # [batch_size, hidden_dim]
@@ -123,7 +148,8 @@ def train_dynamic_probe(train_data: List[Tuple[np.ndarray, float]],
                        save_path: str = None,
                        probe_type: str = "softmax",
                        mlp_hidden_dims: List[int] = None,
-                       dropout: float = 0.1) -> Dict:
+                       dropout: float = 0.1,
+                       use_input_dependent: bool = False) -> Dict:
     """训练动态融合probe"""
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -140,8 +166,10 @@ def train_dynamic_probe(train_data: List[Tuple[np.ndarray, float]],
 
     # 创建模型
     model = DynamicFusionProbe(input_dim, num_layers, probe_type=probe_type,
-                              mlp_hidden_dims=mlp_hidden_dims, dropout=dropout).to(device)
+                              mlp_hidden_dims=mlp_hidden_dims, dropout=dropout,
+                              use_input_dependent=use_input_dependent).to(device)
     print(f"Using probe type: {probe_type}")
+    print(f"Input dependent: {use_input_dependent}")
     if mlp_hidden_dims:
         print(f"MLP hidden dims: {mlp_hidden_dims}, dropout: {dropout}")
 
@@ -223,7 +251,7 @@ def train_dynamic_probe(train_data: List[Tuple[np.ndarray, float]],
             if probe_type == "softmax":
                 weights = torch.softmax(model.layer_weights, dim=0)
                 print(f"Layer weights: {weights.detach().cpu().numpy()}")
-            elif probe_type == "dirichlet":
+            elif probe_type == "dirichlet" and use_input_dependent == False :
                 base_concentration = torch.softmax(model.concentration_logits, dim=0)
                 concentration = torch.exp(model.global_concentration) * base_concentration
                 print(f"Concentration params: {concentration.detach().cpu().numpy()}")
@@ -241,7 +269,8 @@ def train_dynamic_probe(train_data: List[Tuple[np.ndarray, float]],
                         'output_dim': 1,
                         'probe_type': probe_type,
                         'mlp_hidden_dims': mlp_hidden_dims,
-                        'dropout': dropout
+                        'dropout': dropout,
+                        'use_input_dependent': use_input_dependent
                     }
                 }, save_path)
                 print(f"Best model saved to {save_path}")
@@ -282,13 +311,15 @@ def test_dynamic_probe(test_data: List[Tuple[np.ndarray, float]],
     metadata = checkpoint['metadata']
 
     probe_type = metadata.get('probe_type', 'softmax')  # 向后兼容
+    use_input_dependent = metadata.get('use_input_dependent', False)  # 向后兼容
     model = DynamicFusionProbe(
         metadata['input_dim'],
         metadata['num_layers'],
         metadata['output_dim'],
         probe_type=probe_type,
         mlp_hidden_dims=metadata.get('mlp_hidden_dims', None),
-        dropout=metadata.get('dropout', 0.1)
+        dropout=metadata.get('dropout', 0.1),
+        use_input_dependent=use_input_dependent
     ).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
@@ -349,7 +380,8 @@ def run_dynamic_probe_pipeline(task: str,
                               save_dir: str = "probe_save",
                               probe_type: str = "softmax",
                               mlp_hidden_dims: List[int] = None,
-                              dropout: float = 0.1):
+                              dropout: float = 0.1,
+                              use_input_dependent: bool = False):
     """运行完整的动态probe训练和测试流程"""
 
     print(f"Running dynamic probe pipeline for task: {task}")
@@ -383,7 +415,8 @@ def run_dynamic_probe_pipeline(task: str,
     # 训练
     print(f"Training dynamic fusion probe with {probe_type} method...")
     results = train_dynamic_probe(train_data, val_data, save_path=save_path, probe_type=probe_type,
-                                 mlp_hidden_dims=mlp_hidden_dims, dropout=dropout)
+                                 mlp_hidden_dims=mlp_hidden_dims, dropout=dropout,
+                                 use_input_dependent=use_input_dependent)
 
     print(f"Training completed. Best val loss: {results['best_val_loss']:.4f}")
     print(f"Final layer weights: {results['final_layer_weights']}")
@@ -402,6 +435,7 @@ def run_dynamic_probe_pipeline(task: str,
             'probe_type': probe_type,
             'mlp_hidden_dims': mlp_hidden_dims,
             'dropout': dropout,
+            'use_input_dependent': use_input_dependent,
             'epochs': 50,
             'batch_size': 32,
             'learning_rate': 1e-4,

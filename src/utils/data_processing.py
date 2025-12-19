@@ -430,13 +430,14 @@ def main():
             print(f"Loaded {sum(1 for r in individual_results.values() if r is not None)} individual datasets")
             print(f"Loaded {sum(1 for r in mmlu_pro_averages.values() if r is not None)} MMLU Pro categories")
 
-    elif mode in ["mmlu", "alpaca", "big_math","alpaca+big_math"]:
+    elif mode in ["mmlu", "alpaca", "big_math","alpaca+big_math","dynamic"]:
         # Probe模式：从训练集目录加载probe结果
         train_set_mapping = {
             "mmlu": "mmlu",
             "alpaca": "alpaca_5k_train",
             "big_math": "big_math_5k",
-            "alpaca+big_math":"alpaca+big_math"
+            "alpaca+big_math":"alpaca+big_math",
+            "dynamic":"dynamic"
         }
 
         train_set_name = train_set_mapping[mode]
