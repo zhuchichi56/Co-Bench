@@ -297,11 +297,31 @@ class RouterEvaluationPipeline:
             if hidden_states_file is None:
                 raise ValueError("hidden_states_file required for probe router")
 
-            router_name = self.router_manager.create_probe_router(
-                router_config["checkpoint_path"],
-                router_config["probe_type"]
-            )
-            router_identifier = router_config["type"]
+            probe_type = router_config.get("probe_type")
+            use_sampling = router_config.get("use_sampling", False)
+            num_samples = router_config.get("num_samples", 5)
+            if num_samples is None:
+                num_samples = 50 if use_sampling else 5
+
+            is_dynamic_probe = probe_type in ["dynamic_softmax", "dynamic_dirichlet"]
+
+            if is_dynamic_probe:
+                fusion_probe_type = "dirichlet" if "dirichlet" in probe_type else "softmax"
+                if use_sampling:
+                    print(f"Using dynamic fusion router with sampling (num_samples={num_samples})")
+                router_name = self.router_manager.create_dynamic_fusion_router(
+                    router_config["checkpoint_path"],
+                    probe_type=fusion_probe_type,
+                    use_sampling=use_sampling,
+                    num_samples=num_samples
+                )
+                router_identifier = "dynamic_fusion_sampling" if use_sampling else "dynamic_fusion"
+            else:
+                router_name = self.router_manager.create_probe_router(
+                    router_config["checkpoint_path"],
+                    probe_type
+                )
+                router_identifier = router_config["type"]
 
             import torch
             hidden_data = torch.load(hidden_states_file, map_location="cpu", weights_only=False)

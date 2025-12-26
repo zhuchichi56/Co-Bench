@@ -70,13 +70,14 @@ class RouterConfig:
     checkpoint_path: Optional[str] = "probe_save/mixed_mmlu_full_numina_cot_5k_balanced_probe_mean.pt"
     probe_type: str = "mean"
     # hidden_states_file: Optional[str] = "/HOME/sustc_ghchen/sustc_ghchen_4/HDD_POOL/logits/Qwen2.5-7B-Instruct_aime24.pt"
+    use_sampling: bool = False  # Whether to enable sampling for dynamic fusion probes
 
     # Model router settings (self_questioning, deberta, trained_deberta, llm, logits_margin, semantic_entropy)
     model_path: Optional[str] = None
 
 
     # Semantic entropy specific settings
-    num_samples: int = 5  # Number of samples for semantic entropy calculation
+    num_samples: int = 5  # Number of samples (semantic entropy or dynamic fusion sampling)
 
     def to_dict(self, inference_config=None) -> Dict[str, Any]:
         """Convert to dictionary format for compatibility"""
@@ -85,7 +86,9 @@ class RouterConfig:
         if self.router_type == "probe":
             config_dict.update({
                 "checkpoint_path": self.checkpoint_path,
-                "probe_type": self.probe_type
+                "probe_type": self.probe_type,
+                "use_sampling": self.use_sampling,
+                "num_samples": self.num_samples
             })
         elif self.router_type in ["self_questioning", "deberta", "trained_deberta", "llm", "logits_margin", "semantic_entropy"]:
             # Use weak model if not specified
@@ -199,4 +202,3 @@ class PipelineConfig:
             training=training_config,
             **pipeline_data
         )
-

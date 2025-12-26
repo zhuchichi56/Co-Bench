@@ -1,7 +1,7 @@
 # Configuration for Machine B
 data_dir: "data"
 output_dir: "results"
-metric_results_dir: "metric_results/dynamic"
+metric_results_dir: "metric_results/base/probe_sampling"
 recovery_rate_band: [0.85, 0.95]
 lpm_call_rate_band: [0.25, 0.3]
 
@@ -41,8 +41,10 @@ inference:
 router:
   router_type: "probe"
   # checkpoint_path: "probe_save_dynamic/base/numina_cot_5k_train_dirichlet_probe.pt"
-  checkpoint_path: "probe_save/dynamic/mixed_alpaca_5k_train_mmlu_train_big_math_5k_train_dirichlet_probe.pt"
+  checkpoint_path: "probe_save/base/probe/mixed_alpaca_5k_train_mmlu_train_big_math_5k_train_dirichlet_probe.pt"
   probe_type: "dynamic_dirichlet" # "coe_dual_mlp"  "hs_mlp" “dynamic_dirichlet” "dynamic_softmax"
+  use_sampling: true
+  num_samples: 50
   model_path: null
 
 training:

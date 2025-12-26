@@ -381,7 +381,8 @@ def run_dynamic_probe_pipeline(task: str,
                               probe_type: str = "softmax",
                               mlp_hidden_dims: List[int] = None,
                               dropout: float = 0.1,
-                              use_input_dependent: bool = False):
+                              use_input_dependent: bool = False,
+                              epochs: int = 50):
     """运行完整的动态probe训练和测试流程"""
 
     print(f"Running dynamic probe pipeline for task: {task}")
@@ -414,7 +415,7 @@ def run_dynamic_probe_pipeline(task: str,
 
     # 训练
     print(f"Training dynamic fusion probe with {probe_type} method...")
-    results = train_dynamic_probe(train_data, val_data, save_path=save_path, probe_type=probe_type,
+    results = train_dynamic_probe(train_data, val_data, epochs=epochs, save_path=save_path, probe_type=probe_type,
                                  mlp_hidden_dims=mlp_hidden_dims, dropout=dropout,
                                  use_input_dependent=use_input_dependent)
 
@@ -436,7 +437,7 @@ def run_dynamic_probe_pipeline(task: str,
             'mlp_hidden_dims': mlp_hidden_dims,
             'dropout': dropout,
             'use_input_dependent': use_input_dependent,
-            'epochs': 50,
+            'epochs': epochs,
             'batch_size': 32,
             'learning_rate': 1e-4,
             'train_samples': len(train_data),

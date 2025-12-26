@@ -147,6 +147,7 @@ def train_and_test(
     dropout: float,
     save_dir: str,
     use_input_dependent: bool,
+    epochs: int,
 ) -> Dict[str, Any]:
     """单次训练/测试封装。"""
     results = run_dynamic_probe_pipeline(
@@ -157,6 +158,7 @@ def train_and_test(
         mlp_hidden_dims=mlp_hidden_dims,
         dropout=dropout,
         use_input_dependent=use_input_dependent,
+        epochs=epochs,
     )
 
     tr = results["training_results"]
@@ -235,6 +237,12 @@ Examples:
         action="store_true",
         help="是否使用输入依赖的 Dirichlet（仅对 dirichlet 类型有效）",
     )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=50,
+        help="训练轮数（默认: 50）",
+    )
 
     args = parser.parse_args()
 
@@ -246,20 +254,21 @@ Examples:
     print(f"  dropout: {args.dropout}")
     print(f"  save_dir: {args.save_dir}")
     print(f"  use_input_dependent: {args.use_input_dependent}")
+    print(f"  epochs: {args.epochs}")
     print("")
 
     dataset_map = {
         "alpaca_5k": {
             "task": "alpaca_5k_train",
-            "hidden_states_file": "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/hs/Llama-3.1-8B-Instruct_alpaca_5k_train.pt",
+            "hidden_states_file": "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/hs/Qwen3-8B_alpaca_5k_train.pt",
         },
         "mmlu_train": {
             "task": "mmlu_train",
-            "hidden_states_file": "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/hs/Llama-3.1-8B-Instruct_mmlu_train.pt",
+            "hidden_states_file": "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/hs/Qwen3-8B_mmlu_train.pt",
         },
         "big_math": {
             "task": "big_math_5k_train",
-            "hidden_states_file": "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/hs/Llama-3.1-8B-Instruct_big_math_5k_train.pt",
+            "hidden_states_file": "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/hs/Qwen3-8B_big_math_5k_train.pt",
         },
     }
 
@@ -301,6 +310,7 @@ Examples:
                 dropout=args.dropout,
                 save_dir=args.save_dir,
                 use_input_dependent=args.use_input_dependent,
+                epochs=args.epochs,
             )
 
             summary = {

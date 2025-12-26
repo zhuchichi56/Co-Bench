@@ -9,8 +9,14 @@ python test_dynamic.py --datasets alpaca_5k --probe_types dirichlet --max_sample
 
 python test_dynamic.py  --datasets alpaca_5k mmlu_train big_math --probe_types dirichlet --max_samples 4000
 
-python test_dynamic.py  --datasets  alpaca_5k mmlu_train big_math\
+python test_dynamic.py  --datasets  alpaca_5k\
+ --probe_types dirichlet --max_samples 4000 \
+ --dropout 0.1\
+ --epochs 10 \
+ --save_dir /volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/qwen3
+
+ python test_dynamic.py  --datasets  alpaca_5k mmlu_train big_math\
  --probe_types dirichlet --max_samples 12000 \
- --use_input_dependent \
- --dropout 0.5\
- --save_dir /volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/dynamic
+ --dropout 0.1\
+ --epochs 10 \
+ --save_dir /volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/qwen3

@@ -15,7 +15,7 @@ def extract_method_from_dirname(dirname):
     known_methods = [
         "coe", "entropy", "confidence_margin", "max_logits",
         "top10_variance", "semantic_entropy", "self_questioning",
-        "dirichlet", "probe"
+        "dirichlet", "probe", "dynamic_fusion_sampling"
     ]
 
     for method in known_methods:
@@ -206,7 +206,8 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
         # "mean": ("Probe", "ProbeMean"),
         "probe": ("Probe", "Probe"),
         # "dynamic": ("Probe", "DynamicDirichlet"),
-        "dirichlet": ("Probe", "Dirichlet")
+        "dirichlet": ("Probe", "Dirichlet"),
+        "dynamic_fusion_sampling": ("Probe", "DirichletSampling")
     }
 
     def fmt(x):
@@ -418,14 +419,18 @@ def main():
             print(f"Loading data for method: {method_name}")
             print(f"{'='*80}")
 
+            # 特殊处理probe_sampling目录，其子目录以_dynamic_fusion_sampling结尾
+            actual_method_name = "dynamic_fusion_sampling" if method_name == "probe_sampling" else method_name
+
             print("Loading individual dataset metrics...")
-            individual_results = load_individual_datasets(method_dir, method_name)
+            individual_results = load_individual_datasets(method_dir, actual_method_name)
 
             print("Loading MMLU Pro category metrics...")
-            mmlu_pro_averages = load_mmlu_pro_categories(method_dir, method_name)
+            mmlu_pro_averages = load_mmlu_pro_categories(method_dir, actual_method_name)
 
             all_path_results.append((individual_results, mmlu_pro_averages))
-            method_names.append(method_name)
+            # 使用actual_method_name用于method_groups映射
+            method_names.append(actual_method_name)
 
             print(f"Loaded {sum(1 for r in individual_results.values() if r is not None)} individual datasets")
             print(f"Loaded {sum(1 for r in mmlu_pro_averages.values() if r is not None)} MMLU Pro categories")
@@ -437,7 +442,7 @@ def main():
             "alpaca": "alpaca_5k_train",
             "big_math": "big_math_5k",
             "alpaca+big_math":"alpaca+big_math",
-            "dynamic":"dynamic"
+            "dynamic":"dynamic",
         }
 
         train_set_name = train_set_mapping[mode]

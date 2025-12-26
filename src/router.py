@@ -516,11 +516,22 @@ class DynamicFusionProbe(nn.Module):
 
 
 class DynamicFusionRouter(Router):
-    """基于动态融合probe的Router"""
+    """基于动态融合probe的Router，支持采样推理以获得更准确的不确定性估计"""
 
-    def __init__(self, checkpoint_path: str, probe_type: str = "softmax", device: Optional[str] = None):
+    def __init__(self, checkpoint_path: str, probe_type: str = "softmax", device: Optional[str] = None,
+                 use_sampling: bool = False, num_samples: int = 50):
+        """
+        Args:
+            checkpoint_path: 模型检查点路径
+            probe_type: "softmax" 或 "dirichlet"
+            device: 计算设备
+            use_sampling: 是否使用采样推理（仅对dirichlet有效）
+            num_samples: 采样次数，用于不确定性估计
+        """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.probe_type = probe_type
+        self.use_sampling = use_sampling
+        self.num_samples = num_samples
         self.model, self.metadata = self.load_dynamic_fusion_probe(checkpoint_path)
         self.model.to(self.device)
 
@@ -575,8 +586,81 @@ class DynamicFusionRouter(Router):
             model.load_state_dict(model_state)
 
         return model, metadata
+    
+    @torch.no_grad()
+    def inference_with_sampling(self, hidden_states: torch.Tensor) -> tuple:
+        """
+        使用蒙特卡洛采样进行推理，获得更准确的不确定性估计
 
-    def get_router_scores(self, data: List[Dict], **kwargs) -> np.ndarray:
+        Args:
+            hidden_states: [batch_size, num_layers, hidden_dim]
+
+        Returns:
+            final_prediction: [batch_size, output_dim] - N次预测的平均值
+            uncertainty: [batch_size] - 预测方差，表示真实的不确定性
+        """
+        self.model.eval()
+        batch_size = hidden_states.size(0)
+
+        # 计算浓度参数
+        if self.model.probe_type == "dirichlet":
+            base_concentration = torch.softmax(self.model.concentration_logits, dim=0)
+            concentration = torch.exp(self.model.global_concentration) * base_concentration
+        else:
+            # softmax 模式不支持采样，回退到确定性推理
+            weights = torch.softmax(self.model.layer_weights, dim=0)
+            weights_expanded = weights.unsqueeze(0).unsqueeze(-1).expand(batch_size, -1, -1)
+            fused_features = torch.sum(hidden_states * weights_expanded, dim=1)
+            logits = self.model.classifier(fused_features)
+            return logits, torch.zeros(batch_size, device=hidden_states.device)
+
+        # 从 Dirichlet 分布采样 num_samples 次
+        dirichlet_dist = Dirichlet(concentration)
+        # samples_weights: [num_samples, num_layers]
+        samples_weights = dirichlet_dist.sample((self.num_samples,))
+
+        # 扩展到 batch 维度: [num_samples, batch_size, num_layers]
+        samples_weights = samples_weights.unsqueeze(1).expand(-1, batch_size, -1)
+
+        # 对每次采样计算预测
+        all_logits = []
+        for i in range(self.num_samples):
+            # 提取第 i 次采样的权重: [batch_size, num_layers, 1]
+            weights = samples_weights[i].unsqueeze(-1)
+
+            # 特征融合: [batch_size, hidden_dim]
+            fused = torch.sum(hidden_states * weights, dim=1)
+
+            # 预测: [batch_size, output_dim]
+            logits = self.model.classifier(fused)
+            all_logits.append(logits)
+
+        # 汇总统计
+        # [num_samples, batch_size, output_dim]
+        all_logits = torch.stack(all_logits)
+
+        # 最终预测：N次预测的平均
+        final_prediction = all_logits.mean(dim=0)
+
+        # 真实的不确定性：计算 N 次预测之间的方差
+        # 如果方差很大，说明权重稍微一变，结论就变了，模型很"心虚"
+        predictive_uncertainty = all_logits.var(dim=0).mean(dim=-1)
+
+        return final_prediction, predictive_uncertainty
+
+    def get_router_scores(self, data: List[Dict], return_uncertainty: bool = False, **kwargs):
+        """
+        计算router分数
+
+        Args:
+            data: 输入数据列表
+            return_uncertainty: 是否返回不确定性（仅在use_sampling=True时有效）
+            **kwargs: 其他参数
+
+        Returns:
+            如果 return_uncertainty=False: np.ndarray of scores
+            如果 return_uncertainty=True: tuple of (scores, uncertainties)
+        """
         self.model.eval()
 
         features = []
@@ -599,12 +683,30 @@ class DynamicFusionRouter(Router):
         features = torch.cat(features, dim=0).to(self.device)
 
         with torch.no_grad():
-            logits = self.model(features)
-            if logits.dim() > 1:
-                logits = logits.squeeze(-1)
-            scores = torch.sigmoid(logits).cpu().numpy()
+            if self.use_sampling and self.model.probe_type == "dirichlet":
+                # 使用采样推理获得更准确的不确定性估计
+                logits, uncertainty = self.inference_with_sampling(features)
+                if logits.dim() > 1:
+                    logits = logits.squeeze(-1)
+                scores = torch.sigmoid(logits).cpu().numpy()
+                uncertainty_np = uncertainty.cpu().numpy()
 
-        return scores
+                if return_uncertainty:
+                    return scores, uncertainty_np
+                else:
+                    return scores
+            else:
+                # 使用确定性推理（原始方法）
+                logits = self.model(features)
+                if logits.dim() > 1:
+                    logits = logits.squeeze(-1)
+                scores = torch.sigmoid(logits).cpu().numpy()
+
+                if return_uncertainty:
+                    # 如果不使用采样，返回None作为不确定性
+                    return scores, None
+                else:
+                    return scores
 
 class ProbeRouter(Router):
     PROBE_TYPES = {
@@ -777,14 +879,19 @@ class RouterManager:
         self.register_router(router_name, router)
         return router_name
 
-    def create_dynamic_fusion_router(self, checkpoint_path: str, probe_type: str = "softmax", name: Optional[str] = None):
+    def create_dynamic_fusion_router(self, checkpoint_path: str, probe_type: str = "softmax",
+                                      use_sampling: bool = False, num_samples: int = 50,
+                                      name: Optional[str] = None):
         """创建动态融合router
         Args:
             checkpoint_path: 模型检查点路径
             probe_type: "softmax" 或 "dirichlet"
+            use_sampling: 是否使用采样推理（仅对dirichlet有效）
+            num_samples: 采样次数，用于不确定性估计
             name: router名称
         """
-        router = DynamicFusionRouter(checkpoint_path, probe_type)
+        router = DynamicFusionRouter(checkpoint_path, probe_type,
+                                     use_sampling=use_sampling, num_samples=num_samples)
         router_name = name or f"dynamic_fusion_{probe_type}"
         self.register_router(router_name, router)
         return router_name
