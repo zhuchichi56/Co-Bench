@@ -4,7 +4,6 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
-from pathlib import Path
 import json
 import random
 from tqdm import tqdm
@@ -12,10 +11,13 @@ import fire
 from config import PipelineConfig
 import os
 import torch.nn.functional as F
-from router import MLPProbe, ConvProbe, MeanProbe, MaxProbe, MeanMaxProbe, TransformerProbe, ZScoreNormalizer, DynamicFusionProbe
+from router import MLPProbe, ConvProbe, MeanProbe, MaxProbe, MeanMaxProbe, TransformerProbe, ZScoreNormalizer, DynamicFusionProbe, EmbeddingMLPNet
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import multiprocessing as mp
 import gc
+import sys
+from pathlib import Path
+from utils.train_deberta import DeBERTaTrainer, QuestionDataset, TrainingConfig as DebertaTrainingConfig
 
 
 class ProbeDataset(Dataset):
@@ -56,6 +58,29 @@ class ProbeDataset(Dataset):
             features = self.normalizer(features)
 
         return features, label
+
+class EmbeddingDataset(Dataset):
+    """Dataset for EmbeddingMLP router (uses query-level embeddings)."""
+
+    def __init__(self, data: List[Dict], normalizer: Optional[ZScoreNormalizer] = None):
+        self.data = data
+        self.normalizer = normalizer
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+        emb = item.get("query_embedding", None)
+        if emb is None:
+            emb = item.get("embedding", None)
+        if emb is None:
+            raise ValueError(f"Missing query_embedding in sample idx={idx}")
+        emb = torch.tensor(emb, dtype=torch.float32)
+        label = torch.tensor(item.get("acc_label", 0), dtype=torch.float32)
+        if self.normalizer:
+            emb = self.normalizer(emb)
+        return emb, label
 
 
 class ProbeTrainer:
@@ -520,6 +545,288 @@ def train_probe_model(train_data: List[Dict], val_data: List[Dict], probe_type: 
                      save_path: str, probe_config: Optional[Dict] = None, **kwargs) -> Dict:
     trainer = ProbeTrainer(probe_type, probe_config=probe_config)
     return trainer.train(train_data, val_data, save_path=save_path, **kwargs)
+
+
+def train_embedding_mlp_model(train_data: List[Dict], val_data: List[Dict],
+                              input_dim: int,
+                              save_path: str,
+                              hidden_dims: Optional[List[int]] = None,
+                              dropout: float = 0.1,
+                              epochs: int = 50,
+                              batch_size: int = 32,
+                              lr: float = 1e-3) -> Dict:
+    """
+    Train an EmbeddingMLP router.
+    train/val data should contain fields: query_embedding, acc_label.
+    """
+    trainer = EmbeddingMLPTrainer(input_dim=input_dim, hidden_dims=hidden_dims, dropout=dropout)
+    return trainer.train(train_data, val_data, epochs=epochs, batch_size=batch_size, lr=lr, save_path=save_path)
+
+
+def train_deberta_router(config: PipelineConfig, train_path: str, val_path: Optional[str] = None) -> str:
+    """Train a DeBERTa router model using config.training settings."""
+    if not train_path:
+        raise ValueError("deberta_train_path is required for DeBERTa training.")
+    if not Path(train_path).exists():
+        raise FileNotFoundError(f"DeBERTa train file not found: {train_path}")
+    if val_path and not Path(val_path).exists():
+        raise FileNotFoundError(f"DeBERTa val file not found: {val_path}")
+
+    train_cfg = DebertaTrainingConfig()
+    train_cfg.model_name = config.training.deberta_model_name
+    train_cfg.num_labels = config.training.deberta_num_labels
+    train_cfg.max_length = config.training.deberta_max_length
+    train_cfg.batch_size = config.training.deberta_batch_size
+    train_cfg.learning_rate = config.training.deberta_learning_rate
+    train_cfg.weight_decay = config.training.deberta_weight_decay
+    train_cfg.epochs = config.training.deberta_epochs
+    train_cfg.output_dir = config.training.deberta_output_dir
+
+    trainer = DeBERTaTrainer(train_cfg)
+    trainer.setup_distributed()
+
+    train_dataset = QuestionDataset(train_path, trainer.tokenizer, max_length=train_cfg.max_length)
+    val_dataset = QuestionDataset(val_path, trainer.tokenizer, max_length=train_cfg.max_length) if val_path else None
+
+    if trainer.rank == 0:
+        print(f"📊 DeBERTa train size: {len(train_dataset)}")
+        if val_dataset:
+            print(f"📊 DeBERTa val size: {len(val_dataset)}")
+
+    trainer.train(train_dataset, val_dataset)
+
+    if trainer.world_size > 1:
+        import torch.distributed as dist
+        dist.destroy_process_group()
+
+    return train_cfg.output_dir
+
+
+# -------------------------------------------------------------------------
+# Query embedding generation (from LLMRouter Longformer encoder)
+# -------------------------------------------------------------------------
+
+
+def _import_longformer_embedding():
+    """Lazy import Longformer embedding function from local LLMRouter repo."""
+    repo_root = Path(__file__).resolve().parents[2] / "LLMRouter"
+    if str(repo_root) not in sys.path:
+        sys.path.append(str(repo_root))
+    from llmrouter.utils.embeddings import get_longformer_embedding  # type: ignore
+    return get_longformer_embedding
+
+
+def generate_query_embeddings(dataset_path: str,
+                              output_dir: str = "query_embeddings_output",
+                              batch_size: int = 64,
+                              text_field: str = "instruction") -> Path:
+    """
+    Generate Longformer embeddings for a dataset and save as .pt
+
+    Args:
+        dataset_path: JSONL file with a text field (default: "instruction").
+        output_dir: directory to save embeddings.
+        batch_size: embedding batch size.
+        text_field: key in JSON objects that holds the text to embed.
+
+    Returns:
+        Path to saved .pt file containing a list of dicts: {"query_embedding": tensor}
+    """
+    dataset_path = Path(dataset_path)
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {dataset_path}")
+
+    # Load data
+    samples = []
+    with open(dataset_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                samples.append(json.loads(line))
+
+    get_longformer_embedding = _import_longformer_embedding()
+
+    embeddings = []
+    for i in tqdm(range(0, len(samples), batch_size), desc="Embedding"):
+        batch = samples[i:i + batch_size]
+        texts = [item.get(text_field, "") for item in batch]
+        scores = [float(item.get("score", 0.0)) for item in batch]  # align with generate_logits acc_label
+        with torch.no_grad():
+            batch_emb = get_longformer_embedding(texts)
+        # get_longformer_embedding returns Tensor for list input
+        for emb, sc in zip(batch_emb, scores):
+            embeddings.append({
+                "query_embedding": emb.cpu(),
+                "acc_label": sc
+            })
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_path = output_dir / f"{dataset_path.stem}_query_embeddings.pt"
+    torch.save({"data": embeddings}, save_path)
+    return save_path
+
+
+def prepare_deberta_training_file(
+    config: PipelineConfig,
+    datasets: List[str],
+    save_path: Optional[str] = None,
+    default_llm_id: Optional[str] = None,
+) -> str:
+    """
+    Build a DeBERTa training JSONL file from results/*.jsonl.
+    Each output line: {"question": ..., "label": 0/1}
+    """
+    if not datasets:
+        raise ValueError("datasets is empty for DeBERTa training.")
+
+    base_dir = Path(config.output_dir)
+    if not base_dir.is_absolute():
+        base_dir = Path.cwd() / base_dir
+
+
+    def _resolve_results_file(task: str) -> Path:
+        task_path = Path(task)
+        if task_path.exists():
+            return task_path
+        if task.endswith(".jsonl"):
+            candidate = base_dir / task
+            if candidate.exists():
+                return candidate
+        if task.startswith("mmlu_pro_"):
+            candidate = base_dir / "mmlu_pro" / f"{task}.jsonl"
+            if candidate.exists():
+                return candidate
+        candidate = base_dir / f"{task}.jsonl"
+        if candidate.exists():
+            return candidate
+        raise FileNotFoundError(f"Results file not found for dataset: {task}")
+
+    if save_path is None:
+        safe_name = "_".join([Path(d).stem.replace(".jsonl", "") for d in datasets])
+        save_dir = Path(config.training.deberta_output_dir)
+        if not save_dir.is_absolute():
+            save_dir = Path.cwd() / save_dir
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = str(save_dir / f"deberta_train_{safe_name}.jsonl")
+
+    total_written = 0
+    with open(save_path, "w", encoding="utf-8") as out_f:
+        for task in datasets:
+            fp = _resolve_results_file(task)
+            with open(fp, "r", encoding="utf-8") as in_f:
+                for line in in_f:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    question = item.get("question") or item.get("instruction") or item.get("prompt") or ""
+                    if not question:
+                        continue
+                    label = item.get("label", None)
+                    if label is None:
+                        score = float(item.get("score", 0.0))
+                        label = 1 if score > 0.5 else 0
+                    out_f.write(json.dumps({"question": question, "label": int(label)}) + "\n")
+                    total_written += 1
+
+    print(f"🧱 DeBERTa 训练数据已生成: {save_path} (samples={total_written})")
+    return save_path
+
+
+class EmbeddingMLPTrainer:
+    """Trainer for EmbeddingMLP router."""
+
+    def __init__(self, input_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1,
+                 device: Optional[str] = None):
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = EmbeddingMLPNet(input_dim, hidden_dims=hidden_dims, dropout=dropout).to(self.device)
+        self.dropout = dropout
+        self.normalizer = None
+
+    @staticmethod
+    def build_normalizer(dataset: EmbeddingDataset) -> Optional[ZScoreNormalizer]:
+        feats = []
+        for emb, _ in dataset:
+            feats.append(emb.unsqueeze(0))
+        X = torch.cat(feats, dim=0)
+        mu = X.mean(dim=0)
+        std = X.std(dim=0).clamp_min(1e-6)
+        return ZScoreNormalizer(mu, std)
+
+    def train(self, train_data: List[Dict], val_data: List[Dict], epochs: int = 50,
+              batch_size: int = 32, lr: float = 1e-3, save_path: Optional[str] = None,
+              metadata: Optional[Dict[str, Any]] = None) -> Dict:
+
+        # Build datasets
+        temp_ds = EmbeddingDataset(train_data, normalizer=None)
+        self.normalizer = self.build_normalizer(temp_ds)
+        train_ds = EmbeddingDataset(train_data, normalizer=self.normalizer)
+        val_ds = EmbeddingDataset(val_data, normalizer=self.normalizer)
+
+        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+
+        criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=lr)
+
+        best_val_loss = float("inf")
+        history = {"train_loss": [], "val_loss": []}
+
+        for epoch in range(epochs):
+            self.model.train()
+            train_loss = 0.0
+            for emb, label in train_loader:
+                emb = emb.to(self.device, non_blocking=True)
+                label = label.to(self.device, non_blocking=True)
+
+                optimizer.zero_grad()
+                logits = self.model(emb).squeeze(-1)
+                loss = criterion(logits, label)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * emb.size(0)
+
+            train_loss /= len(train_ds)
+
+            # validation
+            self.model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for emb, label in val_loader:
+                    emb = emb.to(self.device, non_blocking=True)
+                    label = label.to(self.device, non_blocking=True)
+                    logits = self.model(emb).squeeze(-1)
+                    loss = criterion(logits, label)
+                    val_loss += loss.item() * emb.size(0)
+            val_loss /= len(val_ds)
+
+            history["train_loss"].append(train_loss)
+            history["val_loss"].append(val_loss)
+
+            print(f"[EmbeddingMLP] Epoch {epoch+1}/{epochs} - train_loss {train_loss:.4f} val_loss {val_loss:.4f}")
+
+            if val_loss < best_val_loss and save_path:
+                best_val_loss = val_loss
+                save_dir = os.path.dirname(save_path)
+                if save_dir:
+                    os.makedirs(save_dir, exist_ok=True)
+                payload = {
+                    "model_state_dict": self.model.state_dict(),
+                    "metadata": {
+                        "input_dim": self.model.net[0].in_features,
+                        "hidden_dims": [m.out_features for m in self.model.net if isinstance(m, nn.Linear)][:-1],
+                        "dropout": self.dropout
+                    }
+                }
+                if metadata:
+                    payload["metadata"].update(metadata)
+                torch.save(payload, save_path)
+                print(f"[EmbeddingMLP] Saved checkpoint to {save_path}")
+
+        return {
+            "best_val_loss": best_val_loss,
+            "history": history,
+            "model_path": save_path
+        }
 
 
 def train_reward_model(train_data: List[Dict], val_data: List[Dict],

@@ -5,8 +5,8 @@ source /volume/pt-train/users/wzhang/ghchen/zh/miniconda3/bin/activate router
 
 # 默认参数
 DATASETS="${1:- hotpotqa_500}"
-PROBE_TYPES="${2:-dynamic_dirichlet}"
-MAX_SAMPLES="${3:-4000}"
+PROBE_TYPES="${2:-hs_last_mlp}"
+MAX_SAMPLES="${3:-500}"
 
 
 # MMLU Pro 测试数据集
@@ -29,9 +29,9 @@ echo "最大样本数: $MAX_SAMPLES"
 # cd inference
 # vllm serve /volume/pt-train/users/wzhang/ghchen/zh/models/Qwen3-8B --chat-template ./qwen3_nonthinking.jinja \
 #  python start.py \
-#   --model_path "/volume/pt-train/users/wzhang/ghchen/zh/models/Qwen3-8B" \
+#   --model_path  "/volume/pt-train/models/Llama-3.1-8B-Instruct" \
 #   --base_port 8001 \
-#   --gpu_list "1,2"
+#   --gpu_list "6,7"
 
 
 
@@ -66,12 +66,24 @@ echo "最大样本数: $MAX_SAMPLES"
 # python run_new.py --mode get_logits --datasets $DATASETS
 # # training probe
 # python run_new.py --mode train --datasets $DATASETS --probe_types $PROBE_TYPES --max_samples $MAX_SAMPLES
+# python run_new.py --mode train --datasets $DATASETS
 
+
+
+# export TRANSFORMERS_CACHE=/volume/pt-train/users/wzhang/ghchen/zh/models/longformer-base-4096
+# export HF_HOME=/volume/pt-train/users/wzhang/ghchen/zh/models
+# export HF_HUB_OFFLINE=1   # 可选，完全离线
+# python run_new.py --mode get_query_emb --datasets $DATASETS
+# python run_new.py --mode train --max_samples 4000 --datasets $DATASETS
 
 # # 评估
-python run_new.py --mode eval_probe --datasets $TEST_DATASETS --probe_types $PROBE_TYPES
-# python run_new.py --mode logits_based_routers --datasets $DATASETS 
-# python run_new.py --mode self_based --datasets $DATASETS 
+# python run_new.py --mode eval_probe --datasets $TEST_DATASETS --probe_types $PROBE_TYPES
+# python run_new.py --mode logits_based_routers --datasets $TEST_DATASETS 
+# python run_new.py --mode self_based --datasets $TEST_DATASETS 
+python run_new.py --mode eval_embedding_mlp  --datasets $DATASETS
+ 
+# python run_new.py --mode eval_deberta --datasets hotpotqa_500
+
 
 
 

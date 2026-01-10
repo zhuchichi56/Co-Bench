@@ -15,8 +15,8 @@ python test_dynamic.py  --datasets  alpaca_5k\
  --epochs 10 \
  --save_dir /volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/qwen3
 
- python test_dynamic.py  --datasets mmlu_train \
- --probe_types dirichlet --max_samples 10000 \
+ python test_dynamic.py  --datasets alpaca_5k mmlu_train big_math \
+ --probe_types dirichlet --max_samples 3000 \
  --dropout 0.1\
  --epochs 50 \
  --save_dir /volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/test

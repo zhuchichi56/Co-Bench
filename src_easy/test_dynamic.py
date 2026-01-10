@@ -240,7 +240,7 @@ Examples:
             if probe_type == "dirichlet":
                 split = int(len(merged) * 0.8)
                 eval_data = merged[split:]
-                stats = evaluate_uncertainty_dirichlet(results["model_path"], eval_data, num_samples=50)
+                # stats = evaluate_uncertainty_dirichlet(results["model_path"], eval_data, num_samples=50)
                 if stats is not None:
                     summary["uncertainty_stats"] = stats
                     summary["global_concentration"] = results["test_results"].get("global_concentration", None)

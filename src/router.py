@@ -18,6 +18,95 @@ class Router(ABC):
         pass
 
 
+
+class EmbeddingMLPNet(nn.Module):
+    """Simple MLP for routing based on pre-computed query embeddings."""
+
+    def __init__(self, input_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1):
+        super().__init__()
+        hidden_dims = hidden_dims or []
+        layers = []
+        prev = input_dim
+        for h in hidden_dims:
+            layers.append(nn.Linear(prev, h))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(dropout))
+            prev = h
+        layers.append(nn.Linear(prev, 1))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class EmbeddingMLPRouter(Router):
+    """
+    Routing with query-level embeddings (same思路 as LLMRouter MLP).
+    输入: 每条样本包含 `query_embedding` 或 `embedding` 字段 (list / np / torch tensor).
+    输出: sigmoid 分数 (越大表示模型更可能正确/更自信，和 probe 路由器保持一致的方向).
+    """
+
+    def __init__(self, checkpoint_path: str, device: Optional[str] = None):
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.checkpoint_path = checkpoint_path
+        self.model, self.metadata = self._load_checkpoint(checkpoint_path)
+        self.model.to(self.device)
+        self.model.eval()
+
+    def _load_checkpoint(self, path: str):
+        ckpt = torch.load(path, map_location="cpu")
+        metadata = ckpt.get("metadata", {})
+
+        # metadata keys we care about
+        input_dim = metadata.get("input_dim")
+        hidden_dims = metadata.get("hidden_dims") or metadata.get("mlp_hidden_dims")
+        dropout = metadata.get("dropout", 0.1)
+
+        # state dict field name
+        state_dict = ckpt.get("model_state_dict") or ckpt.get("state_dict") or ckpt
+
+        if input_dim is None:
+            # 尝试从权重推断 (首层 Linear in_features)
+            for k, v in state_dict.items():
+                if "net.0.weight" in k or "layers.0.weight" in k:
+                    input_dim = v.shape[1]
+                    break
+            if input_dim is None:
+                raise ValueError("input_dim not found in metadata or state_dict; please include it in checkpoint metadata.")
+
+        model = EmbeddingMLPNet(input_dim=input_dim, hidden_dims=hidden_dims, dropout=dropout)
+        model.load_state_dict(state_dict, strict=False)
+        return model, metadata
+
+    @staticmethod
+    def _to_tensor(embed: Any) -> torch.Tensor:
+        if isinstance(embed, torch.Tensor):
+            return embed.float()
+        if isinstance(embed, np.ndarray):
+            return torch.tensor(embed, dtype=torch.float32)
+        return torch.tensor(embed, dtype=torch.float32)
+
+    def get_router_scores(self, data: List[Dict], **kwargs) -> np.ndarray:
+        if len(data) == 0:
+            return np.array([])
+
+        embeds = []
+        for item in data:
+            emb = item.get("query_embedding")
+            if emb is None:
+                emb = item.get("embedding")
+            if emb is None:
+                # fallback: zero vector with input_dim
+                emb = torch.zeros(self.model.net[0].in_features if isinstance(self.model.net[0], nn.Linear) else self.metadata.get("input_dim", 1))
+            embeds.append(self._to_tensor(emb))
+
+        X = torch.stack(embeds).to(self.device)
+        with torch.no_grad():
+            logits = self.model(X).squeeze(-1)
+            scores = torch.sigmoid(logits).cpu().numpy()
+        return scores
+
+
 # finish 
 class SelfQuestioningRouter(Router):
     def __init__(self, model_path: str, confidence_threshold: float = 0.7):
@@ -126,6 +215,11 @@ class TrainedDebertaRouter(Router):
             self.tokenizer = AutoTokenizer.from_pretrained(model_path)
             self.model = AutoModel.from_pretrained(model_path).to(self.device)
 
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+            if hasattr(self.model, "resize_token_embeddings"):
+                self.model.resize_token_embeddings(len(self.tokenizer))
+
         self.sep_token = "<SEP>"
 
     def get_router_scores(self, data: List[Dict], **kwargs) -> np.ndarray:
@@ -135,10 +229,8 @@ class TrainedDebertaRouter(Router):
         with torch.no_grad():
             for item in data:
                 question = item.get("instruction", "")
-                llm_id = item.get("llm_id", "unknown")
-
-                # Format as: Question <SEP> llm_id <SEP>
-                text = f"{question} {self.sep_token} {llm_id} {self.sep_token}"
+                # Format as: Question only
+                text = f"{question}"
 
                 inputs = self.tokenizer(
                     text,
@@ -943,6 +1035,13 @@ class RouterManager:
         self.register_router(router_name, router)
         return router_name
 
+    def create_embedding_mlp_router(self, checkpoint_path: str, name: Optional[str] = None):
+        """创建基于 query embedding 的 MLP 路由器"""
+        router = EmbeddingMLPRouter(checkpoint_path)
+        router_name = name or "embedding_mlp"
+        self.register_router(router_name, router)
+        return router_name
+
     def create_confidence_margin_router(self, name: Optional[str] = None):
         """创建 confidence margin router"""
         router = ConfidenceMarginRouter()
@@ -1343,4 +1442,3 @@ class ConfidenceMarginRouter(Router):
 
 def get_available_probe_types() -> List[str]:
     return list(ProbeRouter.PROBE_TYPES.keys())
-

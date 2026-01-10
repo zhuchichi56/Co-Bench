@@ -1,23 +1,23 @@
 # Configuration for Machine B
 data_dir: "data"
 output_dir: "results"
-metric_results_dir: "metric_results/test"
+metric_results_dir: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results/agent/embedding"
 recovery_rate_band: [0.85, 0.95]
 lpm_call_rate_band: [0.25, 0.3]
 
 inference:
   # Machine B paths - modify these for your actual paths
-  strong_model_path: "gpt-5"
+  strong_model_path: "agent"
   # weak_model_path: "/volume/pt-train/users/wzhang/ghchen/zh/models/"
-  weak_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
+  weak_model_path: "/volume/pt-train/models/Qwen3-8B"
   max_tokens: 2048
   temperature: 0.0
   top_p: 0.9
   skip_special_tokens: true
 
   base_port: 8001  # Different port for Machine B
-  strong_gpu_ids: [1,0]
-  weak_gpu_ids: [1,2]
+  strong_gpu_ids: [3,4]
+  weak_gpu_ids: [6,7]
 
   openai_api_key: "sk-e9OcUwV80NLvl00o73E5F3FcFa2d4a6cB7D46cB3D6263a1a"
   openai_api_base: "https://api.ai-gaochao.cn/v1"
@@ -30,7 +30,7 @@ inference:
   batch_size: 8
   template_type: "default"
   system_prompt: "You are a helpful AI assistant."
-  cuda_visible_devices: "0,1,2,3"
+  cuda_visible_devices: "0,1,2,3,6,7"
 
   # xVerify model configuration for math evaluation
   xverify_model_name: "xVerify"
@@ -39,18 +39,30 @@ inference:
   xverify_api_key: "dummy"
 
 router:
-  router_type: "probe"
-  # checkpoint_path: "probe_save_dynamic/base/numina_cot_5k_train_dirichlet_probe.pt"
-  checkpoint_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/probe_save/test/mixed_alpaca_5k_train_mmlu_train_big_math_5k_train_dirichlet_probe.pt"
-  probe_type: "dynamic_dirichlet" # "coe_dual_mlp"  "hs_mlp" "dynamic_dirichlet" "dynamic_softmax"
+  # 选择路由器类型：trained_deberta / embedding_mlp / probe / ...
+  router_type: "embedding_mlp"
+
+  # 训练完成后用于推理的模型目录（可改为实际 checkpoint 目录）
+  model_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/deberta_checkpoints/agent/checkpoint_epoch_2"
+
+  # EmbeddingMLP 相关配置（如需训练/评估 EmbeddingMLP 可切换 router_type）
+  embedding_files:
+    # - "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output/hotpotqa_4k_query_embeddings.pt"
+    - "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output/hotpotqa_500_query_embeddings.pt"
+    # - "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output/mmlu_train_query_embeddings.pt"
+
+  checkpoint_path: "embedding_mlp/test.pt"
+
+  # 以下参数对 embedding_mlp 无需，但保留以兼容其它路由
+  probe_type: "dynamic_dirichlet"
   use_sampling: false
   num_samples: 50
-  model_path: null
 
 training:
-  epochs: 50
+  # 对齐 MLPRouter 典型超参
+  epochs: 50       
   batch_size: 32
-  learning_rate: 0.0001
+  learning_rate: 0.0001   
 
   # Probe architecture parameters
   # mlp_hidden_dims: [64]  # Hidden layers for MLP probe, set to null or [] for single layer
@@ -59,5 +71,21 @@ training:
   reward_model_name: "microsoft/deberta-v3-base"
   reward_output_dir: "reward_model"
   logits_output_dir: "../hs"
-  probe_save_path: "probe_save/qwen3"
+  probe_save_path: "probe_save/base/probe"
+  query_embedding_output_dir: "query_embeddings_output"
+  embedding_mlp_save_path: "embedding_mlp"
+  embedding_hidden_dims: [256, 64]
+  embedding_dropout: 0.1
   seed: 42
+
+  # DeBERTa Router 训练配置
+  deberta_train_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/data/sample_data.jsonl"
+  deberta_val_path: null
+  deberta_model_name: "/volume/pt-train/users/wzhang/ghchen/zh/models/deberta-v3-small"
+  deberta_num_labels: 2
+  deberta_max_length: 512
+  deberta_batch_size: 16
+  deberta_learning_rate: 0.00001
+  deberta_weight_decay: 0.01
+  deberta_epochs: 3
+  deberta_output_dir: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/deberta_checkpoints/agent"

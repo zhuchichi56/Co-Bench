@@ -49,4 +49,8 @@ training:
   reward_output_dir: "reward_model"
   logits_output_dir: "../logits"
   probe_save_path: "probe_save"
+  query_embedding_output_dir: "query_embeddings_output"
+  embedding_mlp_save_path: "embedding_mlp"
+  embedding_hidden_dims: [128, 64]
+  embedding_dropout: 0.1
   seed: 42

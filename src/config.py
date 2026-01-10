@@ -64,7 +64,7 @@ class InferenceConfig:
 class RouterConfig:
     """Router-specific configuration"""
 
-    router_type: str = "probe" # "probe", "self_questioning", "deberta", "trained_deberta", "llm", "logits_margin", "semantic_entropy", "max_logits", "top10_variance", "coe", "entropy", "confidence_margin"
+    router_type: str = "probe" # "probe", "self_questioning", "deberta", "trained_deberta", "llm", "logits_margin", "semantic_entropy", "max_logits", "top10_variance", "coe", "entropy", "confidence_margin", "embedding_mlp"
 
     # Probe router settings
     checkpoint_path: Optional[str] = "probe_save/mixed_mmlu_full_numina_cot_5k_balanced_probe_mean.pt"
@@ -79,6 +79,9 @@ class RouterConfig:
     # Semantic entropy specific settings
     num_samples: int = 5  # Number of samples (semantic entropy or dynamic fusion sampling)
 
+    # EmbeddingMLP settings
+    embedding_files: Optional[List[str]] = None  # list of .pt files containing query_embedding + acc_label
+
     def to_dict(self, inference_config=None) -> Dict[str, Any]:
         """Convert to dictionary format for compatibility"""
         config_dict = {"type": self.router_type}
@@ -89,6 +92,11 @@ class RouterConfig:
                 "probe_type": self.probe_type,
                 "use_sampling": self.use_sampling,
                 "num_samples": self.num_samples
+            })
+        elif self.router_type == "embedding_mlp":
+            config_dict.update({
+                "checkpoint_path": self.checkpoint_path,
+                "embedding_files": getattr(self, "embedding_files", None)
             })
         elif self.router_type in ["self_questioning", "deberta", "trained_deberta", "llm", "logits_margin", "semantic_entropy"]:
             # Use weak model if not specified
@@ -129,7 +137,23 @@ class TrainingConfig:
     reward_output_dir: str = "reward_model"
     logits_output_dir: str = "/HOME/sustc_ghchen/sustc_ghchen_4/HDD_POOL/logits/"
     probe_save_path: str = "probe_save"
+    query_embedding_output_dir: str = "query_embeddings_output"
+    embedding_mlp_save_path: str = "embedding_mlp"
+    embedding_hidden_dims: Optional[List[int]] = None
+    embedding_dropout: float = 0.1
     seed: int = 42
+
+    # DeBERTa router training
+    deberta_train_path: Optional[str] = None
+    deberta_val_path: Optional[str] = None
+    deberta_model_name: str = "microsoft/deberta-v3-base"
+    deberta_num_labels: int = 2
+    deberta_max_length: int = 512
+    deberta_batch_size: int = 16
+    deberta_learning_rate: float = 2e-5
+    deberta_weight_decay: float = 0.01
+    deberta_epochs: int = 3
+    deberta_output_dir: str = "deberta_checkpoints"
     
     
 

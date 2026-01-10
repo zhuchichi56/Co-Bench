@@ -1,7 +1,7 @@
 import fire
 import numpy as np
-from typing import  Dict
-from data import DataManager, register_custom_dataset, list_available_datasets
+from typing import Dict, Optional
+from data import DataManager, DatasetRegistry, register_custom_dataset, list_available_datasets
 from router import RouterManager, get_available_probe_types
 from metric import BatchMetricEvaluator
 from config import PipelineConfig
@@ -222,7 +222,7 @@ class RouterEvaluationPipeline:
         print(f"Saved {len(output_data)} MT-Bench evaluation results to {output_file}")
         return output_file
 
-    def evaluate_complete_pipeline(self, hidden_states_file: str, datasets) -> Dict:
+    def evaluate_complete_pipeline(self, hidden_states_file: Optional[str], datasets, query_embeddings_file: Optional[str] = None) -> Dict:
         """
         Simplified evaluation using only config parameters
         """
@@ -279,11 +279,18 @@ class RouterEvaluationPipeline:
         print(f"{datasets[0]} - Small model: {small_accuracy:.3f}, Large model: {large_accuracy:.3f}")
 
         model_results = {}
+        dataset_type = "general"
+        try:
+            dataset_type = DatasetRegistry.get_dataset(datasets[0]).type
+        except Exception:
+            dataset_type = "general"
+
         model_results[datasets[0]] = {
             "small_results": small_results,
             "large_results": large_results,
             "small_accuracy": small_accuracy,
             "large_accuracy": large_accuracy,
+            "dataset_type": dataset_type,
             "valid_indices": list(range(len(small_results)))  # 所有样本都有效
         }
 
@@ -315,7 +322,7 @@ class RouterEvaluationPipeline:
                     use_sampling=use_sampling,
                     num_samples=num_samples
                 )
-                router_identifier = "dynamic_fusion_sampling" if use_sampling else "dynamic_fusion"
+                router_identifier = "dynamic_fusion_sampling" if use_sampling else "dynamic"
             else:
                 router_name = self.router_manager.create_probe_router(
                     router_config["checkpoint_path"],
@@ -398,6 +405,34 @@ class RouterEvaluationPipeline:
             for dataset in datasets:
                 small_results = model_results[dataset]["small_results"]
                 router_scores = self.router_manager.get_router_scores(router_name, small_results, model_type="weak")
+                router_scores_dict[dataset] = router_scores
+
+        elif router_config["type"] == "embedding_mlp":
+            router_name = self.router_manager.create_embedding_mlp_router(
+                router_config["checkpoint_path"]
+            )
+            router_identifier = "embedding_mlp"
+
+            if query_embeddings_file is None:
+                raise ValueError("query_embeddings_file is required for embedding_mlp router")
+
+            import torch
+            embedding_data = torch.load(query_embeddings_file, map_location="cpu", weights_only=False)
+            if isinstance(embedding_data, dict) and "data" in embedding_data:
+                embedding_data = embedding_data["data"]
+            if not embedding_data:
+                raise ValueError(f"Embedding file {query_embeddings_file} is empty or missing 'data'")
+
+            for dataset in datasets:
+                valid_indices = model_results[dataset].get("valid_indices", range(len(embedding_data)))
+                max_idx = max(valid_indices) if hasattr(valid_indices, "__iter__") else len(embedding_data) - 1
+                if max_idx >= len(embedding_data):
+                    raise IndexError(
+                        f"Embedding index out of range for dataset {dataset}: "
+                        f"max_idx={max_idx}, embedding_len={len(embedding_data)}, file={query_embeddings_file}"
+                    )
+                filtered_embeddings = [embedding_data[i] for i in valid_indices]
+                router_scores = self.router_manager.get_router_scores(router_name, filtered_embeddings)
                 router_scores_dict[dataset] = router_scores
 
 
@@ -727,12 +762,12 @@ class RouterEvaluationPipeline:
 
             return response.strip()
 
-def evaluate_pipeline(config: PipelineConfig):
+def evaluate_pipeline(config: PipelineConfig, hidden_states_file: str = None, datasets=None, query_embeddings_file: Optional[str] = None):
     """
     Main evaluation function using config parameters only
     """
     pipeline = RouterEvaluationPipeline(config)
-    return pipeline.evaluate_complete_pipeline()
+    return pipeline.evaluate_complete_pipeline(hidden_states_file, datasets, query_embeddings_file=query_embeddings_file)
 
 
 def get_task_score(config: PipelineConfig, task: str, judge_model: str = "gpt-5",

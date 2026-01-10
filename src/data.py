@@ -17,8 +17,6 @@ class DatasetConfig:
 
 class DatasetRegistry:
     DATASETS = {
-        # "mmlupro": DatasetConfig("mmlupro", "mmlupro", "mmlupro.jsonl"),
-        # MMLU Pro数据集
         "mmlu_pro_biology": DatasetConfig("mmlu_pro_biology", "mmlu", "mmlu_pro/biology_converted.jsonl"),
         "mmlu_pro_business": DatasetConfig("mmlu_pro_business", "mmlu", "mmlu_pro/business_converted.jsonl"),
         "mmlu_pro_chemistry": DatasetConfig("mmlu_pro_chemistry", "mmlu", "mmlu_pro/chemistry_converted.jsonl"),
@@ -33,22 +31,9 @@ class DatasetRegistry:
         "mmlu_pro_philosophy": DatasetConfig("mmlu_pro_philosophy", "mmlu", "mmlu_pro/philosophy_converted.jsonl"),
         "mmlu_pro_physics": DatasetConfig("mmlu_pro_physics", "mmlu", "mmlu_pro/physics_converted.jsonl"),
         "mmlu_pro_psychology": DatasetConfig("mmlu_pro_psychology", "mmlu", "mmlu_pro/psychology_converted.jsonl"),
-
-
         "math": DatasetConfig("math", "math", "math.jsonl"),
-        "gsm8k": DatasetConfig("gsm8k", "math", "gsm8k.jsonl"),
-        "aime24": DatasetConfig("aime24", "math", "AIME_2024.jsonl"),
-        "mt_bench": DatasetConfig("mt_bench", "general", "mt_bench.jsonl"),
-        "magpie": DatasetConfig("magpie", "general", "magpie.jsonl"),
-        "numina_cot_5k": DatasetConfig("numina_cot_5k", "math", "numina_cot_5k.jsonl"),
-        "mmlu": DatasetConfig("mmlu_full", "mmlu", "mmlu.jsonl"),
-        "magpie_5k": DatasetConfig("magpie_5k", "general", "magpie_5k.jsonl"),
-        "alpaca_5k": DatasetConfig("alpaca_5k","general","alpaca_5k.jsonl"),
-        "dapo-math-17k_dedup": DatasetConfig("dapo-math-17k_dedup","math","dapo-math-17k_dedup.jsonl"),
         "big_math_10k": DatasetConfig("big_math_10k","math","big_math_10k.jsonl"),
         "alpaca_10k" :DatasetConfig("alpaca_10k","general","alpaca_10k.jsonl"),
-        # for train
-        "mmlu_subset": DatasetConfig("mmlu_5k", "mmlu", "mmlu_subset.jsonl"),
         "mmlu_train": DatasetConfig("mmlu_train", "mmlu", "mmlu_train.jsonl"),
         "mmlu_test": DatasetConfig("mmlu_test", "mmlu", "mmlu_test.jsonl"),
         "numina_cot_5k_train": DatasetConfig("numina_cot_5k_train", "math", "numina_cot_5k_train.jsonl"),
@@ -56,18 +41,11 @@ class DatasetRegistry:
         "magpie_5k_train": DatasetConfig("magpie_5k_train", "general", "magpie_5k_train.jsonl"),
         "magpie_5k_test": DatasetConfig("magpie_5k_test", "general", "magpie_5k_test.jsonl"),
         "alpaca_5k_train": DatasetConfig("alpaca_5k_train","general","alpaca_5k_train.jsonl"),
-         "alpaca_5k_test": DatasetConfig("alpaca_5k_test","general","alpaca_5k_test.jsonl"),
-         "metamath_5k_test": DatasetConfig("metamath_5k_test", "math", "metamath_5k_test.jsonl"),
-         "metamath_5k_train": DatasetConfig("metamath_5k_train", "math", "metamath_5k_train.jsonl"),
-         "big_math_5k_train": DatasetConfig("big_math_5k_train", "math", "big_math_5k_train.jsonl"),
-         "big_math_5k_test": DatasetConfig("big_math_5k_test", "math", "big_math_5k_test.jsonl"),
-         "test": DatasetConfig("test", "general", "test.jsonl"),
-         "alpaca_10k": DatasetConfig("alpaca_10k", "general", "alpaca_10k.jsonl"),
-         "big_math_10k": DatasetConfig("big_math_10k", "math", "big_math_10k.jsonl"),
-         "med_qa_1k": DatasetConfig("med_qa_1k", "mmlu", "med_qa_1k.jsonl"),
-         # HotpotQA: 适合测试搜索Agent的数据集（需要多跳推理）
-         "hotpotqa_500": DatasetConfig("hotpotqa_500", "qa", "hotpotqa_500.jsonl"),
-         "hotpotqa_4k": DatasetConfig("hotpotqa_4k", "qa", "hotpotqa_4k.jsonl"),
+        "alpaca_5k_test": DatasetConfig("alpaca_5k_test","general","alpaca_5k_test.jsonl"),
+        "big_math_5k_train": DatasetConfig("big_math_5k_train", "math", "big_math_5k_train.jsonl"),
+        "big_math_5k_test": DatasetConfig("big_math_5k_test", "math", "big_math_5k_test.jsonl"),
+        "hotpotqa_500": DatasetConfig("hotpotqa_500", "qa", "hotpotqa_500.jsonl"),
+        "hotpotqa_4k": DatasetConfig("hotpotqa_4k", "qa", "hotpotqa_4k.jsonl"),
 
     }
 
@@ -138,25 +116,6 @@ class ModelEvaluator:
                 type=model_type
             )
 
-        # # Evaluate responses
-        # scores = []
-        # if dataset_type == "general":
-        #     # Use llm_judge_general for general datasets (consistent with evaluate_single_dataset)
-        #     questions = [{"instruction": item['instruction']} for item in data]
-        #     answers = [{"response": response} for response in responses]
-        #     ref_answers = [{"response": item.get('response', '')} for item in data]
-        #     scores = llm_judge_general(questions, answers, "gpt-5", ref_answers, max_workers=self.max_workers)
-        # else:
-        #     # Process non-general datasets individually
-        #     for item, response in zip(data, responses):
-        #         gold_response = item.get('response', '')
-        #         is_correct = self.loss_calc._evaluate_response(
-        #             response, gold_response, item['instruction'], dataset_type
-        #         )
-        #         score = 1.0 if is_correct else 0.0
-        #         scores.append(score)
-
-        # Build results
         results = []
         for i, (item, response) in enumerate(zip(data, responses)):
             result = {
@@ -164,7 +123,6 @@ class ModelEvaluator:
                 "instruction": item["instruction"],
                 "response": item.get("response", ""),
                 "generated_response": response,
-                # "score": score,
                 "dataset": dataset_name,
                 "dataset_type": dataset_type
             }
@@ -172,17 +130,7 @@ class ModelEvaluator:
         return results
 
     def evaluate_single_model_from_file(self, file_path: str, dataset_name: str, model_type: str = "weak") -> Dict:
-        """
-        从文件中读取单个模型的responses并进行evaluation
-
-        Args:
-            file_path: 模型输出文件路径
-            dataset_name: 数据集名称
-            model_type: 模型类型 ("weak" 或 "strong")
-
-        Returns:
-            包含评估结果的字典: {"results": List[Dict], "accuracy": float}
-        """
+       
         import json
 
         # 读取文件

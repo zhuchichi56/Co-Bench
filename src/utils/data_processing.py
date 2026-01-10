@@ -15,7 +15,8 @@ def extract_method_from_dirname(dirname):
     known_methods = [
         "coe", "entropy", "confidence_margin", "max_logits",
         "top10_variance", "semantic_entropy", "self_questioning",
-        "dirichlet", "probe", "dynamic_fusion_sampling"
+        "dirichlet", "probe", "dynamic", "dynamic_fusion_sampling", "embedding_mlp",
+        "trained_deberta"
     ]
 
     for method in known_methods:
@@ -176,8 +177,8 @@ def load_mmlu_pro_categories(method_dir, method_name):
     return averages
 
 
-def print_metric_comparison_table(all_path_results, metric, method_names):
-    """为特定指标打印对比表格（带格式、加粗最大值、高亮最后一行）"""
+def print_metric_comparison_table(all_path_results, metric, method_names, highlight_methods=None, print_header=True, print_footer=True):
+    """为特定指标打印对比表格（带格式、加粗最大值、高亮指定方法）"""
 
     dataset_order = ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]
     dataset_display_names = ["Alpaca", "Numina", "MMLU", "Magpie", "MATH"]
@@ -204,10 +205,13 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
         # "coe_dual": ("Probe", "ProbeCoE"),
         # "hs_last": ("Probe", "ProbeFinal"),
         # "mean": ("Probe", "ProbeMean"),
-        "probe": ("Probe", "Probe"),
-        # "dynamic": ("Probe", "DynamicDirichlet"),
+        "probe": ("Probe", "ProbeMean"),
+        "dynamic": ("Probe", "ProbeDirichlet"),
         "dirichlet": ("Probe", "Dirichlet"),
-        "dynamic_fusion_sampling": ("Probe", "DirichletSampling")
+        "dynamic_fusion_sampling": ("Probe", "DirichletSampling"),
+        "embedding_mlp": ("Embedding", "EmbeddingMLP"),
+        "deberta": ("Embedding", "DeBERTa"),
+        "trained_deberta": ("Embedding", "DeBERTa")
 
     }
 
@@ -217,20 +221,20 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
             return "-"
         return f"{x * 100:.2f}"
 
-    print(f"\n{metric.upper()} Comparison Table:")
-    print("=" * 200)
+    if print_header:
+        print(f"\n{metric.upper()} Comparison Table:")
+        print("=" * 200)
 
-    all_columns = first_three_names + ["Avg(1-3)"] + last_two_names + mmlu_pro_order + ["Avg(4-9)"]
-    header = "Method & " + " & ".join([f"\\textbf{{{col}}}" for col in all_columns]) + " \\\\"
-    print(header)
-    print("\\hline")
+        all_columns = first_three_names + ["Avg(1-3)"] + last_two_names + mmlu_pro_order + ["Avg(4-9)"]
+        header = "Method & " + " & ".join([f"\\textbf{{{col}}}" for col in all_columns]) + " \\\\"
+        print(header)
+        print("\\hline")
 
     # 收集所有数据用于找最大值
     all_data = []
     row_count = min(len(method_names), len(all_path_results))
-    
+
     for method_idx in range(row_count):
-        method_name = method_names[method_idx]
         individual_results, mmlu_pro_averages = all_path_results[method_idx]
 
         row_data = []
@@ -277,7 +281,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
         all_data.append(row_data)
 
     # 找每列的最大值
-    num_cols = len(all_data[0])
+    num_cols = len(all_data[0]) if all_data else 0
     max_indices = []
     for col_idx in range(num_cols):
         col_values = [row[col_idx] for row in all_data if row[col_idx] is not None]
@@ -286,6 +290,8 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
             max_indices.append(max_val)
         else:
             max_indices.append(None)
+
+    highlight_methods = set(highlight_methods or [])
 
     # 打印表格
     current_group = None
@@ -297,41 +303,119 @@ def print_metric_comparison_table(all_path_results, metric, method_names):
         if group != current_group:
             if current_group is not None:
                 print("\\midrule")
-            
+
             # 计算该组有多少行
             group_count = sum(1 for m in method_names[method_idx:] if method_groups.get(m, ("", ""))[0] == group)
             print(f"\\multirow{{{group_count}}}{{*}}{{{group}}}")
             current_group = group
 
         row_data = all_data[method_idx]
-        
-        # 是否是最后一行（dynamic）
-        is_last_row = (method_name == "dynamic")
-        
+
+        # 是否需要高亮
+        is_highlight = method_name in highlight_methods
+
         # 格式化每个值
         formatted_values = []
         for col_idx, val in enumerate(row_data):
             formatted_val = fmt(val)
-            
+
             # 如果是最大值，加粗
             if val is not None and max_indices[col_idx] is not None and abs(val - max_indices[col_idx]) < 1e-6:
                 formatted_val = f"\\textbf{{{formatted_val}}}"
-            
-            # 如果是最后一行，加高亮
-            if is_last_row and formatted_val != "-":
+
+            # 如果需要高亮，加高亮
+            if is_highlight and formatted_val != "-":
                 formatted_val = f"\\cellcolor{{Highlight}}{formatted_val}"
-            
+
             formatted_values.append(formatted_val)
 
         # 打印行
-        if is_last_row:
+        if is_highlight:
             row = f"& \\cellcolor{{Highlight}}{display_name} \n& " + " & ".join(formatted_values) + " \\\\"
         else:
             row = f"& {display_name} & " + " & ".join(formatted_values) + " \\\\"
-        
+
         print(row)
 
-    print("\\hline")
+    if print_footer:
+        print("\\hline")
+
+
+def print_combined_lpm_mpm_hpm_table(all_path_results, method_names):
+    highlight_methods = {"probe", "dynamic"}
+    print("\\renewcommand{\\arraystretch}{1.2}")
+    print("\\begin{table*}[t]")
+    print("\\centering")
+    print("\\caption{Scenario alignment ability of routing strategies across multiple benchmarks.}")
+    print("\\small")
+    print("\\resizebox{\\textwidth}{!}{")
+    print("\\begin{tabular}{llccccccccccc}")
+    print("\\toprule")
+    print("\\multirow{2}{*}{\\textbf{Type}}")
+    print("& \\multirow{2}{*}{\\textbf{Method}}")
+    print("& \\multicolumn{4}{c}{\\textbf{In Domain}}")
+    print("& \\multicolumn{7}{c}{\\textbf{Out of Domain}} \\\\")
+    print("\\cmidrule(lr){3-6} \\cmidrule(lr){7-13}")
+    print("& & Alpaca & Big Math & MMLU & AVG")
+    print("& Magpie & MATH & STEM & Humanities & Social Sciences & Others & AVG \\\\")
+    print("\\midrule")
+
+    section_specs = [
+        ("LPM", "LPM (Low Performance Mean)"),
+        ("MPM", "MPM (Middle Performance Mean)"),
+        ("HPM", "HCR(High-band Call Rate)"),
+    ]
+    for metric, title in section_specs:
+        print(f"\\multicolumn{{13}}{{c}}{{\\textit{{{title}}}}} \\\\")
+        print("\\midrule")
+        print_metric_comparison_table(
+            all_path_results,
+            metric,
+            method_names,
+            highlight_methods=highlight_methods,
+            print_header=False,
+            print_footer=False,
+        )
+        print("\\midrule")
+
+    print("\\bottomrule")
+    print("\\end{tabular}")
+    print("}")
+    print("\\label{tab:scence}")
+    print("\\end{table*}")
+
+
+def print_auroc_table(all_path_results, method_names):
+    highlight_methods = {"probe", "dynamic"}
+    print("\\renewcommand{\\arraystretch}{1.2}")
+    print("\\begin{table*}[!t]")
+    print("\\centering")
+    print("\\caption{Router ability (AUROC) comparison of routing strategies across multiple benchmarks.}")
+    print("\\small")
+    print("\\resizebox{\\textwidth}{!}{")
+    print("\\begin{tabular}{l|l|cccc|ccccccc}")
+    print("\\toprule")
+    print("\\multirow{2}{*}{\\textbf{Type}}")
+    print("& \\multirow{2}{*}{\\textbf{Method}}")
+    print("& \\multicolumn{4}{c|}{\\textbf{In Domain}}")
+    print("& \\multicolumn{7}{c}{\\textbf{Out of Domain}} \\\\")
+    print("\\cmidrule(lr){3-6} \\cmidrule(lr){7-13}")
+    print("& & Alpaca & Big Math & MMLU & \\textbf{AVG}")
+    print("& Magpie & MATH & STEM & Humanities & Social Sciences & Others & \\textbf{AVG} \\\\")
+    print("\\midrule")
+    print_metric_comparison_table(
+        all_path_results,
+        "auroc",
+        method_names,
+        highlight_methods=highlight_methods,
+        print_header=False,
+        print_footer=False,
+    )
+    print("\\bottomrule")
+    print("\\end{tabular}")
+    print("}")
+    print("\\label{tab:perf_char}")
+    print("\\end{table*}")
 
 def scan_methods(base_path):
     """自动扫描base_path下的所有方法文件夹
@@ -415,13 +499,19 @@ def main():
         for method_name, method_path in methods:
             print(f"  - {method_name}")
 
+        results_by_method = {}
         for method_name, method_dir in methods:
             print(f"\n{'='*80}")
             print(f"Loading data for method: {method_name}")
             print(f"{'='*80}")
 
             # 特殊处理probe_sampling目录，其子目录以_dynamic_fusion_sampling结尾
-            actual_method_name = "dynamic_fusion" if method_name == "probe_sampling" else method_name
+            if method_name == "probe_sampling":
+                actual_method_name = "dynamic_fusion"
+            elif method_name == "deberta":
+                actual_method_name = "trained_deberta"
+            else:
+                actual_method_name = method_name
 
             print("Loading individual dataset metrics...")
             individual_results = load_individual_datasets(method_dir, actual_method_name)
@@ -429,9 +519,7 @@ def main():
             print("Loading MMLU Pro category metrics...")
             mmlu_pro_averages = load_mmlu_pro_categories(method_dir, actual_method_name)
 
-            all_path_results.append((individual_results, mmlu_pro_averages))
-            # 使用actual_method_name用于method_groups映射
-            method_names.append(actual_method_name)
+            results_by_method[actual_method_name] = (individual_results, mmlu_pro_averages)
 
             print(f"Loaded {sum(1 for r in individual_results.values() if r is not None)} individual datasets")
             print(f"Loaded {sum(1 for r in mmlu_pro_averages.values() if r is not None)} MMLU Pro categories")
@@ -464,15 +552,46 @@ def main():
         return
 
     # 打印对比表格
-    metrics = ["auroc", "LPM", "HPM", "MPM"]
+    if mode == "base":
+        desired_methods = [
+            "self_questioning",
+            "semantic_entropy",
+            "confidence_margin",
+            "entropy",
+            "max_logits",
+            "embedding_mlp",
+            "trained_deberta",
+            "probe",
+            "dynamic",
+        ]
 
-    for metric in metrics:
-        print(f"\n{'='*100}")
-        print(f"Processing {metric.upper()}")
-        print(f"{'='*100}")
+        target_datasets = ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]
+        mmlu_pro_order = ["STEM", "Humanities", "Social Science", "Other"]
 
-        print_metric_comparison_table(all_path_results, metric, method_names)
-        print("\n" + "="*100)
+        all_path_results = []
+        method_names = []
+        for method in desired_methods:
+            if method in results_by_method:
+                all_path_results.append(results_by_method[method])
+                method_names.append(method)
+            else:
+                individual_results = {k: None for k in target_datasets}
+                mmlu_pro_averages = {k: None for k in mmlu_pro_order}
+                all_path_results.append((individual_results, mmlu_pro_averages))
+                method_names.append(method)
+
+        print_combined_lpm_mpm_hpm_table(all_path_results, method_names)
+        print_auroc_table(all_path_results, method_names)
+    else:
+        metrics = ["auroc", "LPM", "HPM", "MPM"]
+
+        for metric in metrics:
+            print(f"\n{'='*100}")
+            print(f"Processing {metric.upper()}")
+            print(f"{'='*100}")
+
+            print_metric_comparison_table(all_path_results, metric, method_names)
+            print("\n" + "="*100)
 
 if __name__ == "__main__":
     main()

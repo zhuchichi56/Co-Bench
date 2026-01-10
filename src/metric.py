@@ -228,9 +228,10 @@ class BatchMetricEvaluator:
             small_results = data['small_results']
             large_results = data['large_results']
             router_scores = router_scores_dict[dataset_name]
+            dataset_type = data.get("dataset_type", "general")
 
             results = self.evaluator.evaluate_from_results(
-                small_results, large_results, router_scores, **kwargs
+                small_results, large_results, router_scores, dataset_type=dataset_type, **kwargs
             )
 
             # Save individual dataset results

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 DeBERTa Training Program for Question Classification
-Input format: question, llm_id, label
-Output format: Question <SEP> llm_id <SEP> -> label
+Input format: question, label
+Output format: Question -> label
 Supports multi-GPU training (4 GPUs)
 """
 
@@ -46,7 +46,7 @@ class QuestionDataset(Dataset):
             for line in f:
                 try:
                     item = json.loads(line.strip())
-                    if all(key in item for key in ['question', 'llm_id', 'label']):
+                    if all(key in item for key in ['question', 'label']):
                         data.append(item)
                 except json.JSONDecodeError:
                     continue
@@ -58,8 +58,8 @@ class QuestionDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
 
-        # Format input: Question <SEP> llm_id <SEP>
-        text = f"{item['question']} {SEP_TOKEN} {item['llm_id']} {SEP_TOKEN}"
+        # Format input: Question only
+        text = f"{item['question']}"
 
         # Tokenize
         encoding = self.tokenizer(
