@@ -1,0 +1,90 @@
+
+
+=== load_config ===
+Loading configuration from: /volume/pt-train/users/wzhang/ghchen/zh/CoBench/config_B.yaml
+
+
+=== train_probe probe_type=dynamic_dirichlet ===
+🚀 Starting mixed dataset probe training for tasks: ['alpaca_5k_train', 'big_math_5k_train', 'mmlu_train']
+📊 Mix strategy: balanced
+🎯 Max samples: 4000
+📁 Loading dataset for task: alpaca_5k_train
+   📊 alpaca_5k_train: 4000 samples (1077 pos, 2923 neg)
+📁 Loading dataset for task: big_math_5k_train
+   📊 big_math_5k_train: 4000 samples (2698 pos, 1302 neg)
+📁 Loading dataset for task: mmlu_train
+   📊 mmlu_train: 3980 samples (2761 pos, 1219 neg)
+🔄 Mixing datasets using strategy: balanced
+Mixed dataset: 3999 total samples
+   Positive samples: 2179 (54.5%)
+Train/Val split: 3199 train, 800 val samples
+Training probe model on mixed datasets
+
+================================================================================
+Model Architecture:
+DynamicFusionProbe(
+  (classifier): Linear(in_features=4096, out_features=1, bias=True)
+)
+
+--------------------------------------------------------------------------------
+🔧 Using DataParallel with 6 GPUs
+Epoch 1/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 1/50 - Training:   0%|          | 0/17 [00:07<?, ?it/s]
+
+--- exception ---
+Traceback (most recent call last):
+  File "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/main.py", line 43, in run
+    return fn(*args, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/train_router.py", line 1042, in complete_probe_training_pipeline_with_mixed_datasets
+    results = train_probe_model(train_data, val_data, probe_type, save_path,
+  File "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/train_router.py", line 532, in train_probe_model
+    return trainer.train(train_data, val_data, save_path=save_path, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/train_router.py", line 267, in train
+    outputs = self.model(batch_features).squeeze(-1)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/parallel/data_parallel.py", line 194, in forward
+    outputs = self.parallel_apply(replicas, inputs, module_kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/parallel/data_parallel.py", line 213, in parallel_apply
+    return parallel_apply(
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/parallel/parallel_apply.py", line 129, in parallel_apply
+    output.reraise()
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/_utils.py", line 769, in reraise
+    raise exception
+RuntimeError: Caught RuntimeError in replica 0 on device 0.
+Original Traceback (most recent call last):
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/parallel/parallel_apply.py", line 99, in _worker
+    output = module(*input, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1775, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/miniconda3/envs/router/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1786, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/router.py", line 522, in forward
+    fused_features = torch.sum(hidden_states * weights_for_fusion, dim=1)  # [batch_size, hidden_dim]
+RuntimeError: The size of tensor a (33) must match the size of tensor b (32) at non-singleton dimension 1
+
+🚀 Starting mixed dataset probe training for tasks: ['alpaca_5k_train', 'big_math_5k_train', 'mmlu_train']
+📊 Mix strategy: balanced
+🎯 Max samples: 4000
+📁 Loading dataset for task: alpaca_5k_train
+   📊 alpaca_5k_train: 4000 samples (1077 pos, 2923 neg)
+📁 Loading dataset for task: big_math_5k_train
+   📊 big_math_5k_train: 4000 samples (2698 pos, 1302 neg)
+📁 Loading dataset for task: mmlu_train
+   📊 mmlu_train: 3980 samples (2761 pos, 1219 neg)
+🔄 Mixing datasets using strategy: balanced
+Mixed dataset: 3999 total samples
+   Positive samples: 2179 (54.5%)
+Train/Val split: 3199 train, 800 val samples
+Training probe model on mixed datasets
+
+================================================================================
+Model Architecture:
+DynamicFusionProbe(
+  (classifier): Linear(in_features=4096, out_features=1, bias=True)
+)
+
+--------------------------------------------------------------------------------
+🔧 Using DataParallel with 6 GPUs
+Epoch 1/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 1/50 - Training:   0%|          | 0/17 [00:07<?, ?it/s]

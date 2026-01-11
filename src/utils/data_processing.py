@@ -8,9 +8,11 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
 def extract_method_from_dirname(dirname):
-    """从目录名中提取方法名
-    例如: alpaca_5k_test_coe -> coe
-         mmlu_pro_biology_entropy -> entropy
+    """Extract method name from a directory name.
+
+    Examples:
+        alpaca_5k_test_coe -> coe
+        mmlu_pro_biology_entropy -> entropy
     """
     known_methods = [
         "coe", "entropy", "confidence_margin", "max_logits",
@@ -26,37 +28,39 @@ def extract_method_from_dirname(dirname):
     return None
 
 def extract_dataset_from_dirname(dirname, method):
-    """从目录名中提取数据集名
-    例如: alpaca_5k_test_coe (method=coe) -> alpaca_5k_test
-         mmlu_pro_biology_entropy (method=entropy) -> mmlu_pro_biology
+    """Extract dataset name from a directory name.
+
+    Examples:
+        alpaca_5k_test_coe (method=coe) -> alpaca_5k_test
+        mmlu_pro_biology_entropy (method=entropy) -> mmlu_pro_biology
     """
     if method and dirname.endswith(f"_{method}"):
         return dirname[:-len(f"_{method}")]
     return dirname
 
 def load_individual_datasets(method_dir, method_name):
-    """读取单独数据集的metrics.json文件
+    """Load per-dataset `metrics.json` under a method directory.
 
     Args:
-        method_dir: 方法目录路径，例如 .../base/coe
-        method_name: 方法名，例如 coe
+        method_dir: method directory path, e.g. .../base/coe
+        method_name: method name, e.g. coe
     """
 
-    # 标准数据集名（不包含_test后缀的也要匹配）
+    # Standard dataset names
     target_datasets = ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]
 
     results = {}
 
-    # 遍历方法目录下的所有文件夹
+    # Traverse dataset subdirectories under the method directory
     for item in os.listdir(method_dir):
         item_path = os.path.join(method_dir, item)
         if not os.path.isdir(item_path):
             continue
 
-        # 提取数据集名
+        # Extract dataset name
         dataset_name = extract_dataset_from_dirname(item, method_name)
 
-        # 检查是否是目标数据集（不是mmlu_pro）
+        # Only keep target datasets (exclude mmlu_pro here)
         if dataset_name not in target_datasets:
             continue
 
@@ -73,12 +77,12 @@ def load_individual_datasets(method_dir, method_name):
                     "MPM": data["adaptive_metrics"]["MPM"]
                 }
 
-                # 如果是alpaca或magpie数据集，auroc、LPM、MPM除以10，HPM不变
+                # For alpaca/magpie, scale LPM/MPM by 1/10 (HPM unchanged)
                 if 'alpaca' in dataset_name.lower() or 'magpie' in dataset_name.lower():
                     
                     metrics["LPM"] = metrics["LPM"] / 10.0 if metrics["LPM"] is not None else None
                     metrics["MPM"] = metrics["MPM"] / 10.0 if metrics["MPM"] is not None else None
-                    # HPM 保持不变
+                    # HPM unchanged
 
                 results[dataset_name] = metrics
 
@@ -89,7 +93,7 @@ def load_individual_datasets(method_dir, method_name):
             print(f"Metrics file not found: {metrics_file}")
             results[dataset_name] = None
 
-    # 补充未找到的数据集为None
+    # Fill missing datasets with None
     for dataset in target_datasets:
         if dataset not in results:
             results[dataset] = None
@@ -97,11 +101,11 @@ def load_individual_datasets(method_dir, method_name):
     return results
 
 def load_mmlu_pro_categories(method_dir, method_name):
-    """读取MMLU Pro分类数据
+    """Load MMLU-Pro category-level metrics.
 
     Args:
-        method_dir: 方法目录路径，例如 .../base/coe
-        method_name: 方法名，例如 coe
+        method_dir: method directory path, e.g. .../base/coe
+        method_name: method name, e.g. coe
     """
 
     categories = {
@@ -118,17 +122,17 @@ def load_mmlu_pro_categories(method_dir, method_name):
         if not os.path.isdir(item_path):
             continue
 
-        # 提取数据集名
+        # Extract dataset name
         dataset_name = extract_dataset_from_dirname(item, method_name)
 
-        # 只处理mmlu_pro开头的
+        # Only process mmlu_pro_*
         if not dataset_name.startswith("mmlu_pro_"):
             continue
 
-        # 提取subject名字
+        # Extract subject
         subject = dataset_name.replace("mmlu_pro_", "")
 
-        # 找到对应的category
+        # Map subject to category
         category = None
         for cat, subjects in categories.items():
             if subject in subjects:
@@ -158,7 +162,7 @@ def load_mmlu_pro_categories(method_dir, method_name):
             except Exception as e:
                 print(f"Error reading {metrics_file}: {e}")
 
-    # 计算每个category的平均值
+    # Compute per-category averages
     averages = {}
     category_order = ["STEM", "Humanities", "Social Science", "Other"]
 
@@ -178,7 +182,7 @@ def load_mmlu_pro_categories(method_dir, method_name):
 
 
 def print_metric_comparison_table(all_path_results, metric, method_names, highlight_methods=None, print_header=True, print_footer=True):
-    """为特定指标打印对比表格（带格式、加粗最大值、高亮指定方法）"""
+    """Print a formatted comparison table for a given metric."""
 
     dataset_order = ["alpaca_5k_test", "big_math_5k_test", "mmlu_test", "magpie_5k_test", "math"]
     dataset_display_names = ["Alpaca", "Numina", "MMLU", "Magpie", "MATH"]
@@ -190,7 +194,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
 
     mmlu_pro_order = ["STEM", "Humanities", "Social Science", "Other"]
 
-    # 方法分组映射
+    # Method grouping map
     method_groups = {
         # Verb-based methods
         "semantic_entropy": ("Verb", "SemanticEntropy"),
@@ -216,7 +220,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
     }
 
     def fmt(x):
-        """将[0,1]的小数转成百分数并保留两位小数；None -> '-'"""
+        """Format a ratio in [0,1] as a percentage with 2 decimals; None -> '-'."""
         if x is None:
             return "-"
         return f"{x * 100:.2f}"
@@ -230,7 +234,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
         print(header)
         print("\\hline")
 
-    # 收集所有数据用于找最大值
+    # Collect all rows to compute per-column maxima
     all_data = []
     row_count = min(len(method_names), len(all_path_results))
 
@@ -239,7 +243,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
 
         row_data = []
 
-        # 前三个数据集
+        # First three datasets
         first_three_vals = []
         for ds in first_three_keys:
             v = None if individual_results.get(ds) is None else individual_results[ds].get(metric, None)
@@ -254,7 +258,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
         else:
             row_data.append(None)
 
-        # 后两个数据集
+        # Last two datasets
         last_two_vals = []
         for ds in last_two_keys:
             v = None if individual_results.get(ds) is None else individual_results[ds].get(metric, None)
@@ -262,7 +266,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
             if v is not None:
                 last_two_vals.append(v)
 
-        # 四个 MMLU-Pro 类别
+        # MMLU-Pro categories
         pro_vals = []
         for cat in mmlu_pro_order:
             v = None if mmlu_pro_averages.get(cat) is None else mmlu_pro_averages[cat].get(metric, None)
@@ -280,7 +284,7 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
 
         all_data.append(row_data)
 
-    # 找每列的最大值
+    # Max value per column
     num_cols = len(all_data[0]) if all_data else 0
     max_indices = []
     for col_idx in range(num_cols):
@@ -293,43 +297,43 @@ def print_metric_comparison_table(all_path_results, metric, method_names, highli
 
     highlight_methods = set(highlight_methods or [])
 
-    # 打印表格
+    # Print table
     current_group = None
     for method_idx in range(row_count):
         method_name = method_names[method_idx]
         group, display_name = method_groups.get(method_name, ("Unknown", method_name))
 
-        # 打印分组头
+        # Print group header
         if group != current_group:
             if current_group is not None:
                 print("\\midrule")
 
-            # 计算该组有多少行
+            # Count rows in this group
             group_count = sum(1 for m in method_names[method_idx:] if method_groups.get(m, ("", ""))[0] == group)
             print(f"\\multirow{{{group_count}}}{{*}}{{{group}}}")
             current_group = group
 
         row_data = all_data[method_idx]
 
-        # 是否需要高亮
+        # Highlight?
         is_highlight = method_name in highlight_methods
 
-        # 格式化每个值
+        # Format values
         formatted_values = []
         for col_idx, val in enumerate(row_data):
             formatted_val = fmt(val)
 
-            # 如果是最大值，加粗
+            # Bold max values
             if val is not None and max_indices[col_idx] is not None and abs(val - max_indices[col_idx]) < 1e-6:
                 formatted_val = f"\\textbf{{{formatted_val}}}"
 
-            # 如果需要高亮，加高亮
+            # Apply highlight
             if is_highlight and formatted_val != "-":
                 formatted_val = f"\\cellcolor{{Highlight}}{formatted_val}"
 
             formatted_values.append(formatted_val)
 
-        # 打印行
+        # Print row
         if is_highlight:
             row = f"& \\cellcolor{{Highlight}}{display_name} \n& " + " & ".join(formatted_values) + " \\\\"
         else:
@@ -418,10 +422,10 @@ def print_auroc_table(all_path_results, method_names):
     print("\\end{table*}")
 
 def scan_methods(base_path):
-    """自动扫描base_path下的所有方法文件夹
+    """Scan all method folders under base_path.
 
     Args:
-        base_path: 基础路径，例如 .../metric_results/base
+        base_path: base path, e.g. .../metric_results/base
 
     Returns:
         list: [(method_name, method_dir_path), ...]
@@ -434,24 +438,24 @@ def scan_methods(base_path):
 
     for item in os.listdir(base_path):
         item_path = os.path.join(base_path, item)
-        # 只处理目录，跳过文件（如summary.json）
+        # Only directories; skip files (e.g., summary.json)
         if os.path.isdir(item_path):
             methods.append((item, item_path))
 
-    # 按方法名排序
+    # Sort by method name
     methods.sort(key=lambda x: x[0])
 
     return methods
 
 
 def load_probe_results_from_train_set(train_set_name):
-    """从训练集目录加载probe结果
+    """Load probe results from a training-set directory.
 
     Args:
-        train_set_name: 训练集名称，例如 mmlu, alpaca_5k_train, big_math_5k
+        train_set_name: training set name, e.g. mmlu, alpaca_5k_train, big_math_5k
 
     Returns:
-        (individual_results, mmlu_pro_averages): 与其他函数相同格式的结果
+        (individual_results, mmlu_pro_averages): same result format as other loaders
     """
     metric_results_base = "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/metric_results"
     train_dir = os.path.join(metric_results_base, train_set_name)
@@ -460,7 +464,7 @@ def load_probe_results_from_train_set(train_set_name):
         print(f"Error: Train directory does not exist: {train_dir}")
         return {}, {}
 
-    # 使用probe方法名加载数据
+    # Use "probe" method name when loading data
     print(f"Loading probe results from: {train_dir}")
     individual_results = load_individual_datasets(train_dir, "probe")
     mmlu_pro_averages = load_mmlu_pro_categories(train_dir, "probe")
@@ -471,8 +475,8 @@ def load_probe_results_from_train_set(train_set_name):
 def main():
     import sys
 
-    # 解析命令行参数
-    mode = "base"  # 默认模式
+    # Parse CLI args
+    mode = "base"  # default mode
     if len(sys.argv) > 1:
         mode = sys.argv[1].lower()
 
@@ -485,7 +489,7 @@ def main():
     method_names = []
 
     if mode == "base":
-        # 原有的base模式
+        # Original base mode
         base_path = os.path.join(metric_results_base, "base")
 
         print(f"Scanning methods in: {base_path}")
@@ -505,7 +509,7 @@ def main():
             print(f"Loading data for method: {method_name}")
             print(f"{'='*80}")
 
-            # 特殊处理probe_sampling目录，其子目录以_dynamic_fusion_sampling结尾
+            # Special-case probe_sampling directory (subdirs end with _dynamic_fusion_sampling)
             if method_name == "probe_sampling":
                 actual_method_name = "dynamic_fusion"
             elif method_name == "deberta":
@@ -525,7 +529,7 @@ def main():
             print(f"Loaded {sum(1 for r in mmlu_pro_averages.values() if r is not None)} MMLU Pro categories")
 
     elif mode in ["mmlu", "alpaca", "big_math","alpaca+big_math","dynamic","test"]:
-        # Probe模式：从训练集目录加载probe结果
+        # Probe mode: load probe results from training-set directory
         train_set_mapping = {
             "mmlu": "mmlu",
             "alpaca": "alpaca_5k_train",
@@ -551,7 +555,7 @@ def main():
         print("Available modes: base, mmlu, alpaca, big_math")
         return
 
-    # 打印对比表格
+    # Print comparison tables
     if mode == "base":
         desired_methods = [
             "self_questioning",

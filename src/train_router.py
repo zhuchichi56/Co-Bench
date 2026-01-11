@@ -7,17 +7,67 @@ from typing import List, Dict, Any, Optional, Tuple
 import json
 import random
 from tqdm import tqdm
-import fire
+try:
+    import fire  # type: ignore
+except ModuleNotFoundError:
+    fire = None
 from config import PipelineConfig
 import os
 import torch.nn.functional as F
-from router import MLPProbe, ConvProbe, MeanProbe, MaxProbe, MeanMaxProbe, TransformerProbe, ZScoreNormalizer, DynamicFusionProbe, EmbeddingMLPNet
+from router import MLPProbe, ConvProbe, MeanProbe, MaxProbe, ZScoreNormalizer, DynamicFusionProbe, EmbeddingMLPNet
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import multiprocessing as mp
 import gc
 import sys
 from pathlib import Path
+from datetime import datetime
 from utils.train_deberta import DeBERTaTrainer, QuestionDataset, TrainingConfig as DebertaTrainingConfig
+
+
+def save_training_history(
+    history: Dict[str, Any],
+    probe_type: str,
+    task_list: List[str],
+    max_samples: Optional[int] = None,
+    save_dir: str = "probe_save/loss",
+) -> str:
+    """
+    Save probe training history (loss/accuracy/auroc curves, etc.) to a JSON file.
+
+    This is optional metadata for experiment tracking; it is not required for training/evaluation.
+    """
+    save_path = Path(save_dir)
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    tasks_str = "_".join(task_list)
+    filename = f"{tasks_str}_{probe_type}_{timestamp}.json"
+    filepath = save_path / filename
+
+    training_results = history.get("training_results", {}) if isinstance(history, dict) else {}
+
+    save_data = {
+        "probe_type": probe_type,
+        "tasks": task_list,
+        "datasets": task_list,
+        "max_samples": max_samples,
+        "timestamp": timestamp,
+        "initial_lr": training_results.get("initial_lr", 0.0),
+        "best_val_loss": training_results.get("best_val_loss", float("inf")),
+        "best_val_acc": training_results.get("best_val_acc", 0.0),
+        "best_val_auroc": training_results.get("best_val_auroc", 0.0),
+        "epochs": len(training_results.get("train_losses", []) or []),
+        "train_losses": training_results.get("train_losses", []) or [],
+        "val_losses": training_results.get("val_losses", []) or [],
+        "val_accuracies": training_results.get("val_accuracies", []) or [],
+        "val_aurocs": training_results.get("val_aurocs", []) or [],
+        "learning_rates": training_results.get("learning_rates", []) or [],
+    }
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(save_data, f, indent=2, ensure_ascii=False)
+
+    return str(filepath)
 
 
 class ProbeDataset(Dataset):
@@ -54,7 +104,7 @@ class ProbeDataset(Dataset):
         else:
             features = hidden_states
 
-        if self.normalizer and self.probe_type not in ["pca_conv", "mean", "max", "mean+max", "transformer", "dynamic_softmax", "dynamic_dirichlet"]:
+        if self.normalizer and self.probe_type not in ["pca_conv", "mean", "max", "hs_mlp", "hs_last_mlp", "dynamic_softmax", "dynamic_dirichlet"]:
             features = self.normalizer(features)
 
         return features, label
@@ -87,7 +137,7 @@ class ProbeTrainer:
     PROBE_CLASSES = {
         "hs_last_mlp": MLPProbe, "hs_mlp": MLPProbe, "coe_dual_mlp": MLPProbe,
         "coe_c_scalar": MLPProbe, "coe_r_scalar": MLPProbe, "pca_conv": ConvProbe,
-        "mean": MeanProbe, "max": MaxProbe, "mean+max": MeanMaxProbe, "transformer": TransformerProbe,
+        "mean": MeanProbe, "max": MaxProbe,
         "dynamic_softmax": DynamicFusionProbe, "dynamic_dirichlet": DynamicFusionProbe
     }
 
@@ -99,7 +149,7 @@ class ProbeTrainer:
         self.probe_config = probe_config or {}
 
     def build_normalizer(self, train_dataset) -> Optional[ZScoreNormalizer]:
-        if self.probe_type in ["pca_conv", "mean", "max", "mean+max", "transformer", "hs_mlp", "hs_last_mlp", "dynamic_softmax", "dynamic_dirichlet"]:
+        if self.probe_type in ["pca_conv", "mean", "max", "hs_mlp", "hs_last_mlp", "dynamic_softmax", "dynamic_dirichlet"]:
             return None
 
         features = []
@@ -124,7 +174,7 @@ class ProbeTrainer:
 
             return hidden_states.shape[0]
         elif self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
-            # 输入形状 [batch_size, num_layers, hidden_dim]，返回 hidden_dim
+            # Input shape: [batch_size, num_layers, hidden_dim] -> return hidden_dim
             return hidden_states.shape[2] if len(hidden_states.shape) > 2 else hidden_states.shape[1]
         return hidden_states.shape[1]
         
@@ -135,7 +185,7 @@ class ProbeTrainer:
         # Build kwargs based on probe type
         kwargs = {}
 
-        if self.probe_type in ["hs_last_mlp", "hs_mlp", "coe_dual_mlp", "coe_c_scalar", "coe_r_scalar", "mean", "max", "mean+max"]:
+        if self.probe_type in ["hs_last_mlp", "hs_mlp", "coe_dual_mlp", "coe_c_scalar", "coe_r_scalar", "mean", "max"]:
             # MLP probes (including mean/max probes that support MLP structure)
             if "mlp_hidden_dims" in self.probe_config and self.probe_config["mlp_hidden_dims"]:
                 kwargs["hidden_dims"] = self.probe_config["mlp_hidden_dims"]
@@ -149,16 +199,9 @@ class ProbeTrainer:
             if "conv_kernel_size" in self.probe_config:
                 kwargs["kernel_size"] = self.probe_config["conv_kernel_size"]
 
-        elif self.probe_type == "transformer":
-            # Transformer probe
-            if "transformer_num_heads" in self.probe_config:
-                kwargs["num_heads"] = self.probe_config["transformer_num_heads"]
-            if "transformer_num_layers" in self.probe_config:
-                kwargs["num_layers"] = self.probe_config["transformer_num_layers"]
-
         elif self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
-            # DynamicFusionProbe：需要 num_layers 参数
-            # 从 probe_config 中获取 num_layers，如果没有则默认为 32（Llama 默认层数）
+            # DynamicFusionProbe requires num_layers.
+            # Read from probe_config; default to 32 (typical Llama transformer layers) if unset.
             num_layers = self.probe_config.get("num_layers", 32)
             probe_subtype = "softmax" if self.probe_type == "dynamic_softmax" else "dirichlet"
             return probe_class(input_dim, num_layers, output_dim, probe_type=probe_subtype)
@@ -178,6 +221,13 @@ class ProbeTrainer:
         num_gpus = torch.cuda.device_count()
         effective_batch_size = batch_size * max(1, num_gpus)
         input_dim = self.get_input_dim(train_dataset[0])
+
+        if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet", "mean"]:
+            if "num_layers" not in self.probe_config or self.probe_config.get("num_layers") is None:
+                sample_feat = train_dataset[0][0]  # [num_layers, hidden_dim]
+                inferred_num_layers = int(sample_feat.shape[0])
+                self.probe_config["num_layers"] = inferred_num_layers
+                print(f"🧠 [DynamicFusionProbe] Inferred num_layers={inferred_num_layers} from training data")
 
         self.model = self.create_model(input_dim).to(self.device)
 
@@ -320,6 +370,10 @@ class ProbeTrainer:
                 'metadata': {'probe_type': self.probe_type, 'input_dim': input_dim, 'output_dim': 1, 'device': self.device}
             }
 
+            # Persist dynamic fusion shape info for correct loading later.
+            if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
+                num_layers = self.probe_config.get("num_layers", None)
+                checkpoint['num_layers'] = num_layers
             if self.normalizer:
                 checkpoint['normalizer'] = {'mu': self.normalizer.mu, 'std': self.normalizer.std}
 
@@ -329,61 +383,6 @@ class ProbeTrainer:
         except Exception as e:
             print(f"❌ Error saving checkpoint: {e}")
             raise
-
-
-class RewardModelTrainer:
-    def __init__(self, model_name: str = "microsoft/deberta-v3-base"):
-        self.model_name = model_name
-
-    def prepare_data(self, data: List[Dict]) -> List[Dict]:
-        return [{"text": f"Question: {item.get('instruction', '')}\nAnswer: {item.get('generated_response', '')}",
-                 "label": item.get("score", 0.0)} for item in data]
-
-    def train(self, train_data: List[Dict], val_data: List[Dict], output_dir: str = "reward_model", **training_args):
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer, TrainingArguments
-
-        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        model = AutoModelForSequenceClassification.from_pretrained(self.model_name, num_labels=1)
-
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-
-        # Create datasets
-        class RewardDataset(Dataset):
-            def __init__(self, data, tokenizer, max_length=512):
-                self.data = data
-                self.tokenizer = tokenizer
-                self.max_length = max_length
-
-            def __len__(self):
-                return len(self.data)
-
-            def __getitem__(self, idx):
-                item = self.data[idx]
-                encoding = self.tokenizer(item["text"], truncation=True, padding="max_length",
-                                        max_length=self.max_length, return_tensors="pt")
-                return {"input_ids": encoding["input_ids"].flatten(),
-                       "attention_mask": encoding["attention_mask"].flatten(),
-                       "labels": torch.tensor(item["label"], dtype=torch.float)}
-
-        train_processed = self.prepare_data(train_data)
-        val_processed = self.prepare_data(val_data)
-        train_dataset = RewardDataset(train_processed, tokenizer)
-        val_dataset = RewardDataset(val_processed, tokenizer)
-
-        args = TrainingArguments(
-            output_dir=output_dir, num_train_epochs=3, per_device_train_batch_size=16,
-            per_device_eval_batch_size=16, warmup_steps=500, weight_decay=0.01,
-            logging_dir=f"{output_dir}/logs", evaluation_strategy="epoch", save_strategy="epoch",
-            load_best_model_at_end=True, **training_args
-        )
-
-        trainer = Trainer(model=model, args=args, train_dataset=train_dataset,
-                         eval_dataset=val_dataset, tokenizer=tokenizer)
-        trainer.train()
-        trainer.save_model()
-        print(f"Reward model saved to {output_dir}")
-        return trainer
 
 
 def _process_data_batch(model, tokenizer, batch_data, device):
@@ -728,7 +727,7 @@ def prepare_deberta_training_file(
                     out_f.write(json.dumps({"question": question, "label": int(label)}) + "\n")
                     total_written += 1
 
-    print(f"🧱 DeBERTa 训练数据已生成: {save_path} (samples={total_written})")
+    print(f"🧱 DeBERTa training data generated: {save_path} (samples={total_written})")
     return save_path
 
 
@@ -829,13 +828,6 @@ class EmbeddingMLPTrainer:
         }
 
 
-def train_reward_model(train_data: List[Dict], val_data: List[Dict],
-                      model_name: str = "microsoft/deberta-v3-base",
-                      output_dir: str = "reward_model", **kwargs):
-    trainer = RewardModelTrainer(model_name)
-    return trainer.train(train_data, val_data, output_dir=output_dir, **kwargs)
-
-
 def load_training_data(data_dir: str) -> Tuple[List[Dict], List[Dict]]:
     data_path = Path(data_dir)
     train_files = list(data_path.glob("**/train*.pt"))
@@ -931,8 +923,8 @@ def _mix_datasets(all_datasets: Dict, mix_strategy: str, max_samples: int = None
     return mixed_data
 
 
-def generate_logits(config: PipelineConfig, task: str, task_path: str):
-    """Complete probe training pipeline: Generate logits from {task}.jsonl"""
+def generate_logits(config: PipelineConfig, task: str, task_path: str) -> Path:
+    """Generate logits (and hidden states) for a task. Returns the logits file path."""
     print(f"🚀 Starting complete probe training pipeline for task: {task}")
 
     dataset_path = task_path
@@ -960,6 +952,8 @@ def generate_logits(config: PipelineConfig, task: str, task_path: str):
             num_gpus=4
         )
 
+    return weak_logits_file
+
 
 def complete_probe_training_pipeline_with_mixed_datasets(
     config: PipelineConfig,
@@ -968,7 +962,6 @@ def complete_probe_training_pipeline_with_mixed_datasets(
     max_samples: int = None,
     save_subdir: Optional[str] = None,
     custom_save_name: Optional[str] = None,
-    use_input_dependent: bool = False,
 ):
     """Train probe model using multiple mixed datasets"""
     print(f"🚀 Starting mixed dataset probe training for tasks: {task_list}")
@@ -1045,8 +1038,6 @@ def complete_probe_training_pipeline_with_mixed_datasets(
         "mlp_dropout": config.training.mlp_dropout,
         "conv_channels": config.training.conv_channels,
         "conv_kernel_size": config.training.conv_kernel_size,
-        "transformer_num_heads": config.training.transformer_num_heads,
-        "transformer_num_layers": config.training.transformer_num_layers,
     }
 
     # Decide save directory and filename
@@ -1146,8 +1137,6 @@ def complete_layerwise_probe_training_pipeline(config: PipelineConfig, task_list
         "mlp_dropout": config.training.mlp_dropout,
         "conv_channels": config.training.conv_channels,
         "conv_kernel_size": config.training.conv_kernel_size,
-        "transformer_num_heads": config.training.transformer_num_heads,
-        "transformer_num_layers": config.training.transformer_num_layers,
     }
 
     all_layer_results = {}
@@ -1226,63 +1215,12 @@ def complete_layerwise_probe_training_pipeline(config: PipelineConfig, task_list
     }
 
 
-def complete_reward_training_pipeline(config: PipelineConfig, task: str):
-    """Complete reward model training pipeline using {task}.jsonl data"""
-    print(f"🏆 Starting complete reward model training pipeline for task: {task}")
-
-    dataset_path = f"{task}.jsonl"
-    if not Path(dataset_path).exists():
-        raise FileNotFoundError(f"Dataset file {dataset_path} not found. Please run get_score first.")
-
-    data_list = []
-    with open(dataset_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            data_list.append(json.loads(line.strip()))
-
-    # Prepare data for reward model training
-    training_data = []
-    for item in data_list:
-        for response_key in ["small_response", "large_response"]:
-            training_data.append({
-                "instruction": item.get("instruction", ""),
-                "generated_response": item.get(response_key, ""),
-                "score": item.get("score", 0.0)
-            })
-
-    # Train/Val split
-    random.shuffle(training_data)
-    split_idx = int(len(training_data) * 0.8)
-    train_data = training_data[:split_idx]
-    val_data = training_data[split_idx:]
-
-    print(f"📊 Prepared {len(train_data)} train samples, {len(val_data)} val samples")
-
-    # Train reward model
-    model_name = config.training.reward_model_name or "microsoft/deberta-v3-base"
-    output_dir = config.training.reward_output_dir or f"{task}_reward_model"
-
-    results = train_reward_model(train_data, val_data, model_name, output_dir)
-
-    print("✅ Reward model training complete!")
-    print(f"💾 Model saved to: {output_dir}")
-
-    return {
-        "model_path": output_dir,
-        "train_samples": len(train_data),
-        "val_samples": len(val_data),
-        "training_results": results
-    }
-
-
 # def train_probe_from_config(config: PipelineConfig, task: str):
 #     """Train probe using config parameters and task data"""
 #     return complete_probe_training_pipeline(config, task)
 
 
-def train_reward_from_config(config: PipelineConfig, task: str):
-    """Train reward model using config parameters and task data"""
-    return complete_reward_training_pipeline(config, task)
-
-
 if __name__ == "__main__":
+    if fire is None:
+        raise SystemExit("Missing optional dependency 'fire'. Install with: pip install fire")
     fire.Fire()

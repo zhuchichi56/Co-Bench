@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
     model_key, config = get_model_config(model_path)
     try:
-        # 只有已知的模型类型才传max_model_len
+        # Only pass max_model_len for known model types
         if model_key in ["llama2", "mistral", "llama3"] and "max_model_len" in config:
             llm = LLM(model=model_path,
                       tokenizer_mode="auto",
@@ -151,13 +151,13 @@ if __name__ == "__main__":
                       max_model_len=config["max_model_len"],
                       gpu_memory_utilization=0.95)
         elif model_key in ["qwen3"] and "max_model_len" in config:
-            # 加载 qwen3 模型
+            # Load Qwen3 model
             llm = LLM(model=model_path,
                       tokenizer_mode="auto",
                       trust_remote_code=True,
                       max_model_len=config["max_model_len"],
                       gpu_memory_utilization=0.95)
-            # 加载后修改 tokenizer 的 chat_template
+            # After loading, override tokenizer.chat_template
             import os
             template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")
             with open(template_path, "r") as f:
@@ -166,13 +166,13 @@ if __name__ == "__main__":
             tokenizer.chat_template = chat_template_content
             logger.info(f"Custom chat template loaded from {template_path}")
         else:
-            # 对于未知模型或不需要max_model_len的模型，使用默认配置
+            # For unknown models or models that don't require max_model_len, use defaults
             llm = LLM(model=model_path,
                       tokenizer_mode="auto",
                       trust_remote_code=True,
                       gpu_memory_utilization=0.95)
 
-        # 对于非 qwen3，在这里获取 tokenizer
+        # For non-Qwen3, get tokenizer here
         if model_key not in ["qwen3"]:
             tokenizer = llm.get_tokenizer()
         logger.info(f"Model {model_path} loaded successfully")

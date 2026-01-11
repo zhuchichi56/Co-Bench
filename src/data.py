@@ -133,14 +133,14 @@ class ModelEvaluator:
        
         import json
 
-        # 读取文件
+        # Read file
         model_data = []
         with open(file_path, 'r', encoding='utf-8') as f:
             for line in f:
                 if line.strip():
                     model_data.append(json.loads(line))
 
-        # 加载数据集
+        # Load dataset
         data, dataset_type = self.data_loader.load_dataset(dataset_name)
 
         def _ensure_general_scores(entries: List[Dict], response_getter) -> List[float]:
@@ -157,7 +157,7 @@ class ModelEvaluator:
                 scores[idx] = judged
             return scores
 
-        # 评估模型
+        # Evaluate model
         scores = []
         if dataset_type == "general":
             scores = _ensure_general_scores(
@@ -175,7 +175,7 @@ class ModelEvaluator:
                 score = 1.0 if is_correct else 0.0
                 scores.append(score)
 
-        # 构建结果
+        # Build results
         results = []
         for i, (item, entry, score) in enumerate(zip(data, model_data, scores)):
             results.append({
@@ -190,7 +190,7 @@ class ModelEvaluator:
 
         accuracy = sum(scores) / len(scores) if scores else 0.0
 
-        # 保存更新后的结果（带有score）
+        # Save updated results (with score)
         with open(file_path, 'w', encoding='utf-8') as f:
             for result in results:
                 f.write(json.dumps(result, ensure_ascii=False) + '\n')
@@ -209,14 +209,14 @@ class ModelEvaluator:
                                model_type: str = "weak",
                                **kwargs) -> Dict:
         """
-        评估单个模型在数据集上的表现
+        Evaluate a single model on a dataset
 
         Args:
-            model_path: 模型路径
-            dataset_name: 数据集名称
-            output_path: 输出文件路径
-            model_type: 模型类型 ("weak" 或 "strong")
-            **kwargs: 其他参数（如 max_tokens, temperature）
+            model_path: Path to the model
+            dataset_name: Name of the dataset
+            output_path: Output file path
+            model_type: Model type ("weak" or "strong")
+            **kwargs: Other parameters (e.g., max_tokens, temperature)
 
         Returns:
             {"results": List[Dict], "accuracy": float}
@@ -225,10 +225,10 @@ class ModelEvaluator:
 
         print(f"Evaluating {model_type} model on {dataset_name}...")
 
-        # 加载数据集
+        # Load dataset
         data, dataset_type = self.data_loader.load_dataset(dataset_name)
 
-        # 生成responses
+        # Generate responses
         generated = self.evaluate_model(
             model_path,
             dataset_name,
@@ -236,16 +236,16 @@ class ModelEvaluator:
             **kwargs
         )
 
-        # 对于 general 数据，推理完成后立即保存（防止后续联网失败）
+        # For general datasets, save immediately after inference (to prevent network failure later)
         if dataset_type == "general":
             import os
             os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
             with open(output_path, 'w', encoding='utf-8') as f:
                 for entry in generated:
                     f.write(json.dumps(entry, ensure_ascii=False) + '\n')
-            print(f"✓ [步骤1/2] 已保存推理结果到 {output_path}（共 {len(generated)} 条，暂不含最终 score）")
+            print(f"✓ [Step 1/2] Saved inference results to {output_path} ({len(generated)} entries, without final score yet)")
 
-        # 评估模型
+        # Evaluate model
         scores = []
         results = []
 
@@ -280,7 +280,7 @@ class ModelEvaluator:
 
         accuracy = sum(scores) / len(scores) if scores else 0.0
 
-        # 保存最终结果
+        # Save final results
         with open(output_path, 'w', encoding='utf-8') as f:
             for result in results:
                 f.write(json.dumps(result, ensure_ascii=False) + '\n')
@@ -298,45 +298,6 @@ class DataManager:
         self.data_loader = DataLoader(data_dir, inference_config=inference_config)
         self.evaluator = ModelEvaluator(self.data_loader, inference_config=inference_config)
         self.output_dir = Path(output_dir)
-
-
-    def evaluate_models_on_datasets(self,
-                                    small_model_path: str,
-                                    large_model_path: str,
-                                  datasets: List[str], **kwargs) -> Dict[str, Dict]:
-        results = {}
-
-        small_model_name = Path(small_model_path).name
-        large_model_name = Path(large_model_path).name
-
-        small_dir = self.output_dir / small_model_name
-        large_dir = self.output_dir / large_model_name
-        small_dir.mkdir(parents=True, exist_ok=True)
-        large_dir.mkdir(parents=True, exist_ok=True)
-
-        for dataset in datasets:
-            small_output = small_dir / f"{dataset}.jsonl"
-            large_output = large_dir / f"{dataset}.jsonl"
-            small_results, large_results = self.evaluator.evaluate_dataset(
-                small_model_path=small_model_path,
-                large_model_path=large_model_path,
-                dataset_name=dataset,
-                small_output_path=str(small_output),
-                large_output_path=str(large_output),
-                **kwargs
-            )
-
-
-
-            results[dataset] = {
-                "small_results": small_results,
-                "large_results": large_results,
-                "small_accuracy": sum(r["score"] for r in small_results) / len(small_results),
-                "large_accuracy": sum(r["score"] for r in large_results) / len(large_results)
-            }
-
-        return results
-
 
     def load_model_results(self, model_name: str, dataset: str) -> List[Dict]:
         file_path = self.output_dir / model_name / f"{dataset}.jsonl"

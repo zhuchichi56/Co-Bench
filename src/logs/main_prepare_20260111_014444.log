@@ -1,0 +1,11 @@
+
+
+=== load_config ===
+Loading configuration from: /volume/pt-train/users/wzhang/ghchen/zh/CoBench/config_B.yaml
+
+
+=== prepare_scores ===
+Getting scores for task: math
+Small model output: results/Llama-3.1-8B-Instruct/math.jsonl
+Large model output: results/gpt-5/math.jsonl
+Found existing small model results, loading from file...

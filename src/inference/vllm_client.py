@@ -79,7 +79,7 @@ async def fetch_results(server_url: str,
                         temperature: float, 
                         top_p: float, 
                         skip_special_tokens: bool):
-    async with httpx.AsyncClient(timeout=3600.0) as client:  # 将超时时间设置为30秒
+    async with httpx.AsyncClient(timeout=3600.0) as client:  # timeout in seconds
         response = await client.post(f"{server_url}/inference", json={
             "input_data": chunk,
             "max_tokens": max_tokens,
@@ -151,7 +151,7 @@ def parallel_inference(prompt_list: List[str],
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
 
-        # 如果是 qwen3 模型，加载自定义 chat template
+        # If this is a Qwen3 model, load a custom chat template
         if "qwen3" in model_name_or_path.lower():
             import os
             template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")
@@ -183,7 +183,7 @@ def parallel_inference_instagger(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # 如果是 qwen3 模型，加载自定义 chat template
+    # If this is a Qwen3 model, load a custom chat template
     if "qwen3" in model_name_or_path.lower():
         import os
         template_path = os.path.join(os.path.dirname(__file__), "qwen3_nonthinking.jinja")

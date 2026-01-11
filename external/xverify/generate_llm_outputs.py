@@ -72,7 +72,7 @@ class GenLLMOutputs:
             logger.error(f"Unable to load YAML file '{conf_path}': {e}")
 
     def load_prompt(self):
-        # 加载 prompt 文件
+        # Load prompt template file
         prompt_path = {
             "few_shot": FEW_SHOT,
             "few_shot_cot": FEW_SHOT_COT,

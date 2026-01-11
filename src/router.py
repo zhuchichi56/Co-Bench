@@ -41,9 +41,12 @@ class EmbeddingMLPNet(nn.Module):
 
 class EmbeddingMLPRouter(Router):
     """
-    Routing with query-level embeddings (same思路 as LLMRouter MLP).
-    输入: 每条样本包含 `query_embedding` 或 `embedding` 字段 (list / np / torch tensor).
-    输出: sigmoid 分数 (越大表示模型更可能正确/更自信，和 probe 路由器保持一致的方向).
+    Routing with query-level embeddings (same idea as LLMRouter MLP).
+
+    Input: each sample contains a `query_embedding` or `embedding` field
+    (list / np.ndarray / torch.Tensor).
+    Output: sigmoid score (larger means the model is more likely correct / more confident),
+    aligned with the probe router score direction.
     """
 
     def __init__(self, checkpoint_path: str, device: Optional[str] = None):
@@ -66,7 +69,7 @@ class EmbeddingMLPRouter(Router):
         state_dict = ckpt.get("model_state_dict") or ckpt.get("state_dict") or ckpt
 
         if input_dim is None:
-            # 尝试从权重推断 (首层 Linear in_features)
+            # Try to infer from weights (first Linear in_features)
             for k, v in state_dict.items():
                 if "net.0.weight" in k or "layers.0.weight" in k:
                     input_dim = v.shape[1]
@@ -430,118 +433,54 @@ class MaxProbe(nn.Module):
         return self.fc(x.max(dim=1).values)
 
 
-class MeanMaxProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: Optional[List[int]] = None, dropout: float = 0.1, **kwargs):
-        super().__init__()
-        # Input dimension is doubled because we concatenate mean and max
-        combined_input_dim = input_dim * 2
-
-        if hidden_dims is None or len(hidden_dims) == 0:
-            # Single linear layer (original behavior)
-            self.fc = nn.Linear(combined_input_dim, output_dim)
-        else:
-            # Multi-layer MLP
-            layers = []
-            prev_dim = combined_input_dim
-            for hidden_dim in hidden_dims:
-                layers.append(nn.Linear(prev_dim, hidden_dim))
-                layers.append(nn.ReLU())
-                layers.append(nn.Dropout(dropout))
-                prev_dim = hidden_dim
-            layers.append(nn.Linear(prev_dim, output_dim))
-            self.fc = nn.Sequential(*layers)
-
-    def forward(self, x):
-        # mean_feat = x.mean(dim=-1)
-        # max_feat = x.max(dim=-1)[0]
-
-        mean_across_layers = x.mean(dim=1)
-        max_across_layers = x.max(dim=1).values
-        combined = torch.cat([mean_across_layers, max_across_layers], dim=-1)
-
-        return self.fc(combined)
-
-
-class TransformerProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int, num_heads: int = 4, num_layers: int = 2, **kwargs):
-        super().__init__()
-        self.input_projection = nn.Linear(input_dim, input_dim)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=input_dim,
-            nhead=num_heads,
-            batch_first=True
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.fc = nn.Linear(input_dim, output_dim)
-
-    def forward(self, x):
-        x = self.input_projection(x)
-        x = self.transformer(x)
-        return self.fc(x.mean(dim=1))
-
-
 class DynamicFusionProbe(nn.Module):
-    """动态融合每一层信号的probe，支持softmax和Dirichlet两种方法"""
-    def __init__(self, input_dim: int, num_layers: int, output_dim: int = 1, probe_type: str = "softmax",
-                 use_input_dependent: bool = False):
+    """Probe that dynamically fuses signals from each layer, supports softmax and Dirichlet methods"""
+    def __init__(self, input_dim: int, num_layers: int, output_dim: int = 1, probe_type: str = "softmax"):
         super().__init__()
         self.num_layers = num_layers
         self.input_dim = input_dim
         self.probe_type = probe_type
-        self.use_input_dependent = use_input_dependent
 
         if probe_type == "softmax":
-            # 原始方法：每层的权重参数，可学习
+            # Original method: learnable weight parameters for each layer
             self.layer_weights = nn.Parameter(torch.ones(num_layers))
         elif probe_type == "dirichlet":
-            if use_input_dependent:
-                # 输入依赖版本：通过网络计算 β(x)
-                # 使用网络将输入映射到浓度参数
-                hidden_dim = max(num_layers * 2, 64)
-                self.concentration_network = nn.Sequential(
-                    nn.Linear(input_dim, hidden_dim),
-                    nn.ReLU(),
-                    nn.Dropout(0.1),
-                    nn.Linear(hidden_dim, num_layers),
-                    nn.Softplus()  # 确保输出为正数
-                )
-            else:
-                # 原版本：固定的全局浓度参数（向后兼容）
-                self.concentration_logits = nn.Parameter(torch.ones(num_layers))  # 学习log(α)
-                self.global_concentration = nn.Parameter(torch.tensor(1.0))  # 学习β₀
+            # Fixed global concentration parameters
+            self.concentration_logits = nn.Parameter(torch.ones(num_layers))  # Learn log(α)
+            self.global_concentration = nn.Parameter(torch.tensor(1.0))  # Learn β₀
         else:
             raise ValueError(f"Unknown probe_type: {probe_type}")
 
-        # 最终的分类器
+        # Final classifier
         self.classifier = nn.Linear(input_dim, output_dim)
 
     def forward(self, hidden_states, return_uncertainty=False, return_weights=False):
         """
         Args:
             hidden_states: [batch_size, num_layers, hidden_dim]
-            return_uncertainty: 是否返回不确定性指标 (仅对Dirichlet有效)
-            return_weights: 是否返回alpha权重 [batch_size, num_layers]
+            return_uncertainty: Whether to return uncertainty metric (only effective for Dirichlet)
+            return_weights: Whether to return alpha weights [batch_size, num_layers]
         Returns:
             logits: [batch_size, output_dim]
-            uncertainty: (optional) 不确定性指标
-            weights: (optional) alpha权重 [batch_size, num_layers]
+            uncertainty: (optional) Uncertainty metric
+            weights: (optional) Alpha weights [batch_size, num_layers]
         """
         batch_size = hidden_states.size(0)
 
         if self.probe_type == "softmax":
-            # 原始方法：简单softmax权重
+            # Original method: simple softmax weights
             weights = torch.softmax(self.layer_weights, dim=0)  # [num_layers]
             weights_expanded = weights.unsqueeze(0).unsqueeze(-1)  # [1, num_layers, 1]
             fused_features = torch.sum(hidden_states * weights_expanded, dim=1)  # [batch_size, hidden_dim]
 
             logits = self.classifier(fused_features)
 
-            # 构建返回值
+            # Build return value
             result = [logits]
             if return_uncertainty:
-                result.append(None)  # 原始方法不提供不确定性
+                result.append(None)  # Original method doesn't provide uncertainty
             if return_weights:
-                # 返回每个样本的权重 [batch_size, num_layers]
+                # Return weights for each sample [batch_size, num_layers]
                 result.append(weights.unsqueeze(0).expand(batch_size, -1))
 
             if len(result) == 1:
@@ -549,24 +488,16 @@ class DynamicFusionProbe(nn.Module):
             return tuple(result)
 
         elif self.probe_type == "dirichlet":
-            # Dirichlet方法：从Dirichlet分布采样权重
-            if self.use_input_dependent:
-                # 输入依赖版本：β(x) 根据输入计算
-                # 使用 mean pooling 作为输入特征
-                input_features = hidden_states.mean(dim=1)  # [batch_size, input_dim]
-                concentration = self.concentration_network(input_features)  # [batch_size, num_layers]
-                # 添加小的常数避免数值不稳定
-                concentration = concentration + 1e-6
-            else:
-                # 原版本：固定的全局浓度参数
-                base_concentration = torch.softmax(self.concentration_logits, dim=0)  # [num_layers]
-                concentration = torch.exp(self.global_concentration) * base_concentration  # [num_layers]
-                # 扩展到 batch 维度以统一后续处理
-                concentration = concentration.unsqueeze(0).expand(batch_size, -1)  # [batch_size, num_layers]
+            # Dirichlet method: sample weights from Dirichlet distribution
+            # Fixed global concentration parameters
+            base_concentration = torch.softmax(self.concentration_logits, dim=0)  # [num_layers]
+            concentration = torch.exp(self.global_concentration) * base_concentration  # [num_layers]
+            # Expand to batch dimension for unified processing
+            concentration = concentration.unsqueeze(0).expand(batch_size, -1)  # [batch_size, num_layers]
 
             if self.training:
-                # 训练时：从Dirichlet分布采样
-                # 对每个样本使用其对应的 concentration
+                # During training: sample from Dirichlet distribution
+                # Use corresponding concentration for each sample
                 weights_list = []
                 uncertainty_list = []
                 for i in range(batch_size):
@@ -579,22 +510,22 @@ class DynamicFusionProbe(nn.Module):
                 uncertainty = torch.stack(uncertainty_list, dim=0)  # [batch_size]
                 weights_for_fusion = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
             else:
-                # 推理时：使用期望值 ᾱ_l(x) = β_l(x) / Σβ_j(x)
-                beta_0 = concentration.sum(dim=1, keepdim=True)  # [batch_size, 1] - β₀(x)
-                weights = concentration / beta_0  # [batch_size, num_layers] - ᾱ(x)
+                # During inference: use expected value ᾱ_l = β_l / Σβ_j
+                beta_0 = concentration.sum(dim=1, keepdim=True)  # [batch_size, 1] - β₀
+                weights = concentration / beta_0  # [batch_size, num_layers] - ᾱ
                 weights_for_fusion = weights.unsqueeze(-1)  # [batch_size, num_layers, 1]
 
-                # 计算不确定性：使用 β₀(x) = Σβ_j(x)
-                # 大的 β₀(x) 表示高置信度（低不确定性）
-                # 小的 β₀(x) 表示低置信度（高不确定性）
-                # 使用负对数作为不确定性指标
+                # Calculate uncertainty: use β₀ = Σβ_j
+                # Large β₀ indicates high confidence (low uncertainty)
+                # Small β₀ indicates low confidence (high uncertainty)
+                # Use negative log as uncertainty metric
                 uncertainty = -torch.log(beta_0.squeeze(1))  # [batch_size]
 
-            # 加权融合
+            # Weighted fusion
             fused_features = torch.sum(hidden_states * weights_for_fusion, dim=1)  # [batch_size, hidden_dim]
             logits = self.classifier(fused_features)
 
-            # 构建返回值
+            # Build return value
             result = [logits]
             if return_uncertainty:
                 result.append(uncertainty)
@@ -607,199 +538,6 @@ class DynamicFusionProbe(nn.Module):
 
 
 
-class DynamicFusionRouter(Router):
-    """基于动态融合probe的Router，支持采样推理以获得更准确的不确定性估计"""
-
-    def __init__(self, checkpoint_path: str, probe_type: str = "softmax", device: Optional[str] = None,
-                 use_sampling: bool = False, num_samples: int = 50):
-        """
-        Args:
-            checkpoint_path: 模型检查点路径
-            probe_type: "softmax" 或 "dirichlet"
-            device: 计算设备
-            use_sampling: 是否使用采样推理（仅对dirichlet有效）
-            num_samples: 采样次数，用于不确定性估计
-        """
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.probe_type = probe_type
-        self.use_sampling = use_sampling
-        self.num_samples = num_samples
-        self.model, self.metadata = self.load_dynamic_fusion_probe(checkpoint_path)
-        self.model.to(self.device)
-
-    def load_dynamic_fusion_probe(self, checkpoint_path: str):
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
-
-        model_state = checkpoint["model_state_dict"]
-        metadata = checkpoint.get("metadata", {})
-
-        input_dim = metadata.get("input_dim", 4096)
-        num_layers = metadata.get("num_layers", 32)
-        output_dim = metadata.get("output_dim", 1)
-        probe_type = metadata.get("probe_type", self.probe_type)
-        use_input_dependent = metadata.get("use_input_dependent", False)  # 向后兼容
-
-        model = DynamicFusionProbe(input_dim, num_layers, output_dim, probe_type, use_input_dependent)
-        # Compatibility: remap checkpoint keys between fc.* and net.* when needed
-        try:
-            expected_keys = set(model.state_dict().keys())
-            ckpt_keys = set(model_state.keys())
-
-            # Case 1: model expects net.* but checkpoint provides fc.*
-            if any(k.startswith("net.") for k in expected_keys) and any(k.startswith("fc.") for k in ckpt_keys):
-                remapped = {}
-                for k, v in model_state.items():
-                    new_k = k.replace("fc.", "net.") if k.startswith("fc.") else k
-                    remapped[new_k] = v
-                model_state = remapped
-
-            # Case 2: model expects fc.* but checkpoint provides net.*
-            if any(k.startswith("fc.") for k in expected_keys) and any(k.startswith("net.") for k in ckpt_keys):
-                remapped = {}
-                for k, v in model_state.items():
-                    new_k = k.replace("net.", "fc.") if k.startswith("net.") else k
-                    remapped[new_k] = v
-                model_state = remapped
-
-            missing, unexpected = [], []
-            try:
-                # dry run to collect issues without throwing
-                model.load_state_dict(model_state, strict=False)
-                # When strict=False, we cannot directly get missing/unexpected; do a manual diff for logging
-                missing = [k for k in expected_keys if k not in model_state]
-                unexpected = [k for k in model_state if k not in expected_keys]
-                if missing or unexpected:
-                    print(f"[Probe Load] Non-strict load. Missing: {missing}, Unexpected: {unexpected}")
-            except Exception:
-                # fallback to strict load to expose error
-                model.load_state_dict(model_state)
-        except Exception:
-            # As a last resort, try original loading
-            model.load_state_dict(model_state)
-
-        return model, metadata
-    
-    @torch.no_grad()
-    def inference_with_sampling(self, hidden_states: torch.Tensor) -> tuple:
-        """
-        使用蒙特卡洛采样进行推理，获得更准确的不确定性估计
-
-        Args:
-            hidden_states: [batch_size, num_layers, hidden_dim]
-
-        Returns:
-            final_prediction: [batch_size, output_dim] - N次预测的平均值
-            uncertainty: [batch_size] - 预测方差，表示真实的不确定性
-        """
-        self.model.eval()
-        batch_size = hidden_states.size(0)
-
-        # 计算浓度参数
-        if self.model.probe_type == "dirichlet":
-            base_concentration = torch.softmax(self.model.concentration_logits, dim=0)
-            concentration = torch.exp(self.model.global_concentration) * base_concentration
-        else:
-            # softmax 模式不支持采样，回退到确定性推理
-            weights = torch.softmax(self.model.layer_weights, dim=0)
-            weights_expanded = weights.unsqueeze(0).unsqueeze(-1).expand(batch_size, -1, -1)
-            fused_features = torch.sum(hidden_states * weights_expanded, dim=1)
-            logits = self.model.classifier(fused_features)
-            return logits, torch.zeros(batch_size, device=hidden_states.device)
-
-        # 从 Dirichlet 分布采样 num_samples 次
-        dirichlet_dist = Dirichlet(concentration)
-        # samples_weights: [num_samples, num_layers]
-        samples_weights = dirichlet_dist.sample((self.num_samples,))
-
-        # 扩展到 batch 维度: [num_samples, batch_size, num_layers]
-        samples_weights = samples_weights.unsqueeze(1).expand(-1, batch_size, -1)
-
-        # 对每次采样计算预测
-        all_logits = []
-        for i in range(self.num_samples):
-            # 提取第 i 次采样的权重: [batch_size, num_layers, 1]
-            weights = samples_weights[i].unsqueeze(-1)
-
-            # 特征融合: [batch_size, hidden_dim]
-            fused = torch.sum(hidden_states * weights, dim=1)
-
-            # 预测: [batch_size, output_dim]
-            logits = self.model.classifier(fused)
-            all_logits.append(logits)
-
-        # 汇总统计
-        # [num_samples, batch_size, output_dim]
-        all_logits = torch.stack(all_logits)
-
-        # 最终预测：N次预测的平均
-        final_prediction = all_logits.mean(dim=0)
-
-        # 真实的不确定性：计算 N 次预测之间的方差
-        # 如果方差很大，说明权重稍微一变，结论就变了，模型很"心虚"
-        predictive_uncertainty = all_logits.var(dim=0).mean(dim=-1)
-
-        return final_prediction, predictive_uncertainty
-
-    def get_router_scores(self, data: List[Dict], return_uncertainty: bool = False, **kwargs):
-        """
-        计算router分数
-
-        Args:
-            data: 输入数据列表
-            return_uncertainty: 是否返回不确定性（仅在use_sampling=True时有效）
-            **kwargs: 其他参数
-
-        Returns:
-            如果 return_uncertainty=False: np.ndarray of scores
-            如果 return_uncertainty=True: tuple of (scores, uncertainties)
-        """
-        self.model.eval()
-
-        features = []
-        for item in data:
-            # 处理元组格式的数据
-            if isinstance(item, tuple):
-                hidden_states = item[0]  # numpy.ndarray
-            else:
-                # 处理字典格式的数据
-                hidden_states = item.get("hidden_states", [])
-
-            # 将 numpy 数组转换为 torch tensor
-            if isinstance(hidden_states, np.ndarray):
-                hidden_states = torch.tensor(hidden_states, dtype=torch.float32)
-            elif not isinstance(hidden_states, torch.Tensor):
-                hidden_states = torch.tensor(hidden_states, dtype=torch.float32)
-
-            features.append(hidden_states.unsqueeze(0))
-
-        features = torch.cat(features, dim=0).to(self.device)
-
-        with torch.no_grad():
-            if self.use_sampling and self.model.probe_type == "dirichlet":
-                # 使用采样推理获得更准确的不确定性估计
-                logits, uncertainty = self.inference_with_sampling(features)
-                if logits.dim() > 1:
-                    logits = logits.squeeze(-1)
-                scores = torch.sigmoid(logits).cpu().numpy()
-                uncertainty_np = uncertainty.cpu().numpy()
-
-                if return_uncertainty:
-                    return scores, uncertainty_np
-                else:
-                    return scores
-            else:
-                # 使用确定性推理（原始方法）
-                logits = self.model(features)
-                if logits.dim() > 1:
-                    logits = logits.squeeze(-1)
-                scores = torch.sigmoid(logits).cpu().numpy()
-
-                if return_uncertainty:
-                    # 如果不使用采样，返回None作为不确定性
-                    return scores, None
-                else:
-                    return scores
-
 class ProbeRouter(Router):
     PROBE_TYPES = {
         "hs_last_mlp": MLPProbe,
@@ -810,8 +548,6 @@ class ProbeRouter(Router):
         "pca_conv": ConvProbe,
         "mean": MeanProbe,
         "max": MaxProbe,
-        "mean+max": MeanMaxProbe,
-        "transformer": TransformerProbe,
         "dynamic_softmax": DynamicFusionProbe,
         "dynamic_dirichlet": DynamicFusionProbe
     }
@@ -838,19 +574,53 @@ class ProbeRouter(Router):
         model_class = self.PROBE_TYPES[self.probe_type]
 
         if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
-            # 动态融合probe需要额外的参数
+            # Dynamic fusion probe requires additional parameters
             num_layers = metadata.get("num_layers", 32)
             probe_method = "softmax" if self.probe_type == "dynamic_softmax" else "dirichlet"
-            use_input_dependent = metadata.get("use_input_dependent", False)  # 向后兼容
-            model = model_class(input_dim, num_layers, output_dim, probe_method, use_input_dependent)
+            model = model_class(input_dim, num_layers, output_dim, probe_method)
+            
+            # Compatibility: remap checkpoint keys between fc.* and net.* when needed
+            try:
+                expected_keys = set(model.state_dict().keys())
+                ckpt_keys = set(model_state.keys())
+
+                # Case 1: model expects net.* but checkpoint provides fc.*
+                if any(k.startswith("net.") for k in expected_keys) and any(k.startswith("fc.") for k in ckpt_keys):
+                    remapped = {}
+                    for k, v in model_state.items():
+                        new_k = k.replace("fc.", "net.") if k.startswith("fc.") else k
+                        remapped[new_k] = v
+                    model_state = remapped
+
+                # Case 2: model expects fc.* but checkpoint provides net.*
+                if any(k.startswith("fc.") for k in expected_keys) and any(k.startswith("net.") for k in ckpt_keys):
+                    remapped = {}
+                    for k, v in model_state.items():
+                        new_k = k.replace("net.", "fc.") if k.startswith("net.") else k
+                        remapped[new_k] = v
+                    model_state = remapped
+
+                missing, unexpected = [], []
+                try:
+                    # dry run to collect issues without throwing
+                    model.load_state_dict(model_state, strict=False)
+                    # When strict=False, we cannot directly get missing/unexpected; do a manual diff for logging
+                    missing = [k for k in expected_keys if k not in model_state]
+                    unexpected = [k for k in model_state if k not in expected_keys]
+                    if missing or unexpected:
+                        print(f"[Probe Load] Non-strict load. Missing: {missing}, Unexpected: {unexpected}")
+                except Exception:
+                    # fallback to strict load to expose error
+                    model.load_state_dict(model_state)
+            except Exception:
+                # As a last resort, try original loading
+                model.load_state_dict(model_state)
         elif self.probe_type == "pca_conv":
             model = model_class(input_dim, output_dim)
-        elif self.probe_type == "transformer":
-            model = model_class(input_dim, output_dim)
+            model.load_state_dict(model_state)
         else:
             model = model_class(input_dim, output_dim)
-
-        model.load_state_dict(model_state)
+            model.load_state_dict(model_state)
 
         normalizer = None
         if normalizer_state:
@@ -862,27 +632,32 @@ class ProbeRouter(Router):
         return model, normalizer, metadata
 
     def extract_features(self, data: List[Dict]) -> torch.Tensor:
+        """
+        Extract features from input data based on probe type
+        
+        Note: For dynamic fusion probes (dynamic_softmax, dynamic_dirichlet), 
+        this method is not used; get_router_scores handles them directly.
+        """
         features = []
         for i, item in enumerate(data):
-            # 处理元组格式的数据
+            # Handle tuple format data
             if isinstance(item, tuple):
-                # 假设第一个元素是 hidden_states，第二个是标签
+                # Assume first element is hidden_states, second is label
                 hidden_states = item[0]  # numpy.ndarray
-                # 如果需要标签，可以用 item[1]
             else:
-                # 处理字典格式的数据
+                # Handle dict format data
                 hidden_states = item.get("hidden_states", [])
             
-            # 将 numpy 数组转换为 torch tensor
+            # Convert numpy array to torch tensor
             if isinstance(hidden_states, np.ndarray):
                 hidden_states = torch.tensor(hidden_states, dtype=torch.float32)
             elif not isinstance(hidden_states, torch.Tensor):
                 hidden_states = torch.tensor(hidden_states, dtype=torch.float32)
 
-            if self.probe_type == "hs_last_mlp" or self.probe_type =="hs_mlp":
+            if self.probe_type == "hs_last_mlp" or self.probe_type == "hs_mlp":
                 feat = hidden_states[-1]
             elif self.probe_type in ["coe_dual_mlp", "coe_c_scalar", "coe_r_scalar"]:
-                # 加入计算 coe 的代码
+                # Compute CoE (Coefficient of Evolution) features
                 mag_features = []
                 angle_features = []
                 for j in range(hidden_states.shape[0] - 1):
@@ -900,14 +675,58 @@ class ProbeRouter(Router):
                     torch.stack(angle_features)
                 ], dim=0)
             else:
-                feat = hidden_states  # 修正：应该是 feat 而不是 features
+                # For other probe types (including dynamic fusion probes if called),
+                # use hidden_states directly
+                feat = hidden_states
 
             features.append(feat.unsqueeze(0))
 
         return torch.cat(features, dim=0)
 
     def get_router_scores(self, data: List[Dict], **kwargs) -> np.ndarray:
+        """
+        Calculate router scores
+
+        Args:
+            data: Input data list
+            **kwargs: Other parameters
+
+        Returns:
+            np.ndarray of scores
+        """
         self.model.eval()
+        
+        # For dynamic fusion probes, process hidden_states directly (no extract_features needed)
+        if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
+            features = []
+            for item in data:
+                # Handle tuple format data
+                if isinstance(item, tuple):
+                    hidden_states = item[0]  # numpy.ndarray
+                else:
+                    # Handle dict format data
+                    hidden_states = item.get("hidden_states", [])
+
+                # Convert numpy array to torch tensor
+                if isinstance(hidden_states, np.ndarray):
+                    hidden_states = torch.tensor(hidden_states, dtype=torch.float32)
+                elif not isinstance(hidden_states, torch.Tensor):
+                    hidden_states = torch.tensor(hidden_states, dtype=torch.float32)
+
+                features.append(hidden_states.unsqueeze(0))
+
+            features = torch.cat(features, dim=0).to(self.device)
+            
+            with torch.no_grad():
+                # Use deterministic inference
+                logits = self.model(features)
+                if logits.dim() > 1:
+                    logits = logits.squeeze(-1)
+                scores = torch.sigmoid(logits).cpu().numpy()
+
+            return scores
+        
+        # For other probe types, use extract_features
         features = self.extract_features(data)
 
         if self.normalizer:
@@ -971,36 +790,19 @@ class RouterManager:
         self.register_router(router_name, router)
         return router_name
 
-    def create_dynamic_fusion_router(self, checkpoint_path: str, probe_type: str = "softmax",
-                                      use_sampling: bool = False, num_samples: int = 50,
-                                      name: Optional[str] = None):
-        """创建动态融合router
-        Args:
-            checkpoint_path: 模型检查点路径
-            probe_type: "softmax" 或 "dirichlet"
-            use_sampling: 是否使用采样推理（仅对dirichlet有效）
-            num_samples: 采样次数，用于不确定性估计
-            name: router名称
-        """
-        router = DynamicFusionRouter(checkpoint_path, probe_type,
-                                     use_sampling=use_sampling, num_samples=num_samples)
-        router_name = name or f"dynamic_fusion_{probe_type}"
-        self.register_router(router_name, router)
-        return router_name
-
     def create_logits_margin_router(self, model_path: str, name: Optional[str] = None):
-        """创建 logits margin router"""
+        """Create a logits-margin router."""
         router = LogitsMarginRouter(model_path)
         router_name = name or "logits_margin"
         self.register_router(router_name, router)
         return router_name
 
     def create_semantic_entropy_router(self, model_path: str, num_samples: int = 5, name: Optional[str] = None):
-        """创建 semantic entropy router
+        """Create a semantic-entropy router.
         Args:
-            model_path: 模型路径
-            num_samples: 生成样本数用于计算熵
-            name: router名称
+            model_path: model path
+            num_samples: number of samples to generate for entropy estimation
+            name: router name
         """
         router = SemanticEntropyRouter(model_path, num_samples)
         router_name = name or "semantic_entropy"
@@ -1008,42 +810,42 @@ class RouterManager:
         return router_name
 
     def create_max_logits_router(self, name: Optional[str] = None):
-        """创建 max logits router"""
+        """Create a max-logits router."""
         router = MaxLogitsRouter()
         router_name = name or "max_logits"
         self.register_router(router_name, router)
         return router_name
 
     def create_top10_variance_router(self, name: Optional[str] = None):
-        """创建 top-10 variance router"""
+        """Create a top-10 variance router."""
         router = Top10VarianceRouter()
         router_name = name or "top10_variance"
         self.register_router(router_name, router)
         return router_name
 
     def create_coe_router(self, name: Optional[str] = None):
-        """创建 CoE router"""
+        """Create a CoE router."""
         router = CoERouter()
         router_name = name or "coe"
         self.register_router(router_name, router)
         return router_name
 
     def create_entropy_router(self, name: Optional[str] = None):
-        """创建 entropy router"""
+        """Create an entropy router."""
         router = EntropyRouter()
         router_name = name or "entropy"
         self.register_router(router_name, router)
         return router_name
 
     def create_embedding_mlp_router(self, checkpoint_path: str, name: Optional[str] = None):
-        """创建基于 query embedding 的 MLP 路由器"""
+        """Create an MLP router based on query embeddings."""
         router = EmbeddingMLPRouter(checkpoint_path)
         router_name = name or "embedding_mlp"
         self.register_router(router_name, router)
         return router_name
 
     def create_confidence_margin_router(self, name: Optional[str] = None):
-        """创建 confidence margin router"""
+        """Create a confidence-margin router."""
         router = ConfidenceMarginRouter()
         router_name = name or "confidence_margin"
         self.register_router(router_name, router)

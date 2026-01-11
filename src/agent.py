@@ -1,7 +1,3 @@
-"""
-smolagents Agent 框架（带异步并发、断点续传、Template、Evaluate）
-参考 ASearcher_vllm_async.py 的架构，整合原有的 template 和 evaluate 功能
-"""
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -13,13 +9,12 @@ import os
 from tqdm import tqdm
 from dataclasses import dataclass, asdict
 
-# 添加 xVerify 路径
 PROJECT_ROOT = Path(__file__).parent.parent
 XVERIFY_PATH = PROJECT_ROOT / "external" / "xverify"
 sys.path.insert(0, str(XVERIFY_PATH))
 
 from smolagents import (
-    Tool, CodeAgent, TransformersModel, VLLMModel,
+    Tool, CodeAgent, VLLMModel,
     OpenAIServerModel, DuckDuckGoSearchTool, VisitWebpageTool
 )
 from smolagents.monitoring import LogLevel
@@ -32,7 +27,6 @@ from inference.vllm_client import get_template
 
 @dataclass
 class Runs:
-    """单次运行结果"""
     step_number: int
     final_answer: str | float | int | None
     error_info: str | None
@@ -42,10 +36,9 @@ class Runs:
 
 @dataclass
 class Example:
-    """完整的问题示例"""
     id: str
     instruction: str
-    response: str  # 标准答案
+    response: str
     model_id: str
     max_steps: int
     runs: list[Runs]
@@ -88,14 +81,12 @@ def process_single_question(
         )
 
         try:
-            # 方案1: 不使用template，直接在问题中引导使用搜索
             if template_type == "search_guided":
                 task_inference = f"""If you are uncertain, use web_search to find information.
 
 {question}
 
 Remember: For multiple choice questions, your final answer must be a single letter (A, B, C, D, or E)."""
-            # 方案2: 使用原有template
             else:
                 task_inference = get_template(
                     question,
@@ -119,7 +110,6 @@ Remember: For multiple choice questions, your final answer must be a single lett
     return agent
 
 def pack_single_run(agent):
-    """将agent执行结果打包成Runs对象"""
     steps = agent.memory.steps
 
     try:
@@ -153,7 +143,6 @@ def pack_single_run(agent):
 
 
 def get_remaining_data(output_file, all_data):
-    """读取已处理数据，返回剩余待处理项"""
     processed_ids = set()
     if os.path.exists(output_file):
         count = 0
@@ -165,7 +154,7 @@ def get_remaining_data(output_file, all_data):
 
                     error_info = example['runs'][0]['error_info']
                     if error_info and ("Azure CLI" in error_info or "az login" in error_info or "Rate limit" in error_info):
-                        print(f"{count}. ID: {example['id']} - 检测到错误，将重新生成")
+                        print(f"{count}. ID: {example['id']} - detected error; will re-generate")
                         continue
 
                     processed_ids.add(example['id'])
@@ -180,13 +169,12 @@ def get_remaining_data(output_file, all_data):
                             print(f"   Error: {example['runs'][0]['error_info'][:100]}")
                     print(f"   Steps: {example['runs'][0]['step_number']}")
                     print()
-        print(f"已处理数据: {count}")
+        print(f"Processed data: {count}")
     else:
-        print("输出文件不存在，将从头开始")
+        print("Output file does not exist, starting from the beginning")
 
-    # 返回剩余未处理的数据
     remaining_data = [item for item in all_data if item['id'] not in processed_ids]
-    print(f"剩余待处理: {len(remaining_data)}")
+    print(f"Remaining to process: {len(remaining_data)}")
     return remaining_data
 
 async def process_single_item(
@@ -202,14 +190,11 @@ async def process_single_item(
     use_openai_server,
     api_base
 ):
-    """异步处理单个数据项"""
     async with semaphore:
         qid, instruction, true_answer = item["id"], item["instruction"], item.get("response", "")
 
-        # 运行多次并收集所有结果
         all_runs = []
         for _ in range(n_runs):
-            # 在线程池中运行，避免阻塞
             agent = await asyncio.get_event_loop().run_in_executor(
                 None,
                 process_single_question,
@@ -226,7 +211,6 @@ async def process_single_item(
             run_data = pack_single_run(agent)
             all_runs.append(run_data)
 
-            # 输出当前运行结果（使用tqdm.write避免干扰进度条）
             tqdm.write(f"Q: {instruction[:100]}...")
             tqdm.write(f"A: {true_answer}")
             if run_data.final_answer:
@@ -238,7 +222,6 @@ async def process_single_item(
             tqdm.write(f"Steps: {run_data.step_number}")
             tqdm.write("-" * 50)
 
-        # 创建Example对象
         example = Example(
             id=qid,
             instruction=instruction,
@@ -269,11 +252,9 @@ async def process_all_questions(
     use_openai_server=False,
     api_base="http://localhost:8000/v1"
 ):
-    """异步批量处理所有问题，按id顺序保存"""
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     semaphore = asyncio.Semaphore(concurrent_limit)
 
-    # 确保输出文件存在
     async with asyncio.Lock():
         with open(output_file, 'a', encoding='utf-8') as f:
             pass
@@ -286,10 +267,8 @@ async def process_all_questions(
         for input_item in inputs
     ]
 
-    # 创建id到索引的映射，用于排序
     id_to_index = {item["id"]: idx for idx, item in enumerate(inputs)}
 
-    # 收集所有结果，按完成顺序
     completed_results = {}
     next_to_save_idx = 0
 
@@ -301,11 +280,9 @@ async def process_all_questions(
             completed_results[result_idx] = result
             pbar.update(1)
 
-            # 检查是否有错误
             error_info = result["example"]["runs"][0]["error_info"]
             if error_info and ("Azure CLI" in error_info or "az login" in error_info):
-                print("检测到Azure CLI错误，停止执行")
-                # 按照id顺序保存所有已完成的结果
+                print("Detected Azure CLI error, stopping execution")
                 sorted_indices = sorted(completed_results.keys())
                 with open(output_file, 'a', encoding='utf-8') as f:
                     for idx in sorted_indices:
@@ -313,7 +290,6 @@ async def process_all_questions(
                         f.write('\n')
                 return
 
-            # 尝试保存所有可以按顺序保存的结果
             with open(output_file, 'a', encoding='utf-8') as f:
                 while next_to_save_idx in completed_results:
                     result_to_save = completed_results.pop(next_to_save_idx)
@@ -323,24 +299,23 @@ async def process_all_questions(
                     next_to_save_idx += 1
 
 async def main_async():
-    parser = argparse.ArgumentParser(description="Agent 推理与评估（异步版本）")
+    parser = argparse.ArgumentParser(description="Agent inference and evaluation (async version)")
     parser.add_argument("--agent_name", type=str, default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--dataset", type=str, default="gsm8k")
     parser.add_argument("--num_samples", type=int, default=None)
     parser.add_argument("--agent_tools", type=str, nargs="+", default=None)
     parser.add_argument("--template_type", type=str, default="default",
                        choices=["default", "alpaca", "tags", "direct", "search_guided"],
-                       help="search_guided: 引导模型使用搜索工具")
+                       help="search_guided: guide the model to use search tool")
     parser.add_argument("--max_workers", type=int, default=8)
     parser.add_argument("--max_steps", type=int, default=20)
-    parser.add_argument("--n_runs", type=int, default=1, help="每个问题运行次数")
-    parser.add_argument("--concurrent_limit", type=int, default=10, help="并发限制")
-    parser.add_argument("--use_openai_server", action="store_true", help="使用OpenAI Server模式")
+    parser.add_argument("--n_runs", type=int, default=1, help="number of runs per question")
+    parser.add_argument("--concurrent_limit", type=int, default=10, help="concurrent limit")
+    parser.add_argument("--use_openai_server", action="store_true", help="use OpenAI Server mode")
     parser.add_argument("--api_base", type=str, default="http://localhost:8000/v1")
 
     args = parser.parse_args()
 
-    # 处理工具参数
     tools = []
     if args.agent_tools:
         tool_mapping = {
@@ -350,9 +325,9 @@ async def main_async():
         for tool_name in args.agent_tools:
             if tool_name in tool_mapping:
                 tools.append(tool_mapping[tool_name]())
-                print(f"✅ 已加载工具: {tool_name}")
+                print(f"✅ Loaded tool: {tool_name}")
             else:
-                print(f"⚠️  未知工具: {tool_name}")
+                print(f"⚠️ Unknown tool: {tool_name}")
 
     data_loader = DataLoader()
     data, dataset_type = data_loader.load_dataset(args.dataset)
@@ -390,9 +365,9 @@ async def main_async():
             use_openai_server=args.use_openai_server,
             api_base=args.api_base
         )
-        print(f"\n✅ 推理完成！")
+        print(f"\n✅ Inference completed!")
     else:
-        print("所有数据已处理完成！")
+        print("All data processed!")
 
 
     complete_results = []
@@ -402,7 +377,7 @@ async def main_async():
                 complete_results.append(json.loads(line))
 
     if not complete_results:
-        print("没有可评估的数据！")
+        print("No data to evaluate!")
         return
 
     loss_calc = MultiModalLossCalculator(model=None, tokenizer=None, device=None)
@@ -446,7 +421,6 @@ async def main_async():
 
 
 def main():
-    """同步主函数入口"""
     asyncio.run(main_async())
 
 
@@ -455,9 +429,9 @@ if __name__ == "__main__":
 
 
 """
-使用示例：
+Example:
 
-1. 启动 vLLM 服务器：
+1. Start vLLM server:
 screen -S vllm
 vllm serve /volume/pt-train/models/Llama-3.1-8B-Instruct \
     --host 0.0.0.0 \
@@ -466,7 +440,7 @@ vllm serve /volume/pt-train/models/Llama-3.1-8B-Instruct \
     --gpu-memory-utilization 0.95 \
     --enable_prefix_caching
 
-2. 运行异步 Agent（带Template和Evaluate）：
+2. Run async Agent (with Template and Evaluate):
 python src/agent.py \
     --agent_name /volume/pt-train/models/Llama-3.1-8B-Instruct \
     --dataset gsm8k \
@@ -479,6 +453,6 @@ python src/agent.py \
     --use_openai_server \
     --api_base "http://localhost:8000/v1"
 
-3. 断点续传（自动跳过已处理的数据，继续评估）：
-python src/agent.py --dataset gsm8k --use_openai_server --concurrent_limit 10
+3. Resume from checkpoint (skip processed data and continue evaluation):
+python src/agent.py --dataset hotpotqa_500 --use_openai_server --concurrent_limit 10
 """

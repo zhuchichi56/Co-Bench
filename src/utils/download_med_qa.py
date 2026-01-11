@@ -1,67 +1,74 @@
 #!/usr/bin/env python3
 """
-从 Hugging Face 下载 MedQA 数据集并转换为指定格式
-使用方法:
-    python download_med_qa.py
+Download MedQA and export to JSONL under src/data/.
+
+Notes:
+- If you have local parquet files, set MEDQA_PARQUET_DIR to load them instead of Hub.
+
+Examples:
+  python src/utils/download_med_qa.py
+  MEDQA_PARQUET_DIR=/path/to/medqa_parquet python src/utils/download_med_qa.py -n 2000
 """
-import json
 import argparse
 from pathlib import Path
 import sys
+import os
 
+from download_common import (
+    ensure_int,
+    get_output_data_dir,
+    human_mb,
+    maybe_print,
+    print_preview,
+    require_hf_datasets,
+    write_jsonl,
+)
 
-def download_and_extract_medqa(num_samples: int = 1000):
+def download_and_extract_medqa(
+    num_samples: int = 1000,
+    *,
+    verbose: bool = True,
+    preview: int = 2,
+) -> bool:
     """
-    从 Hugging Face 下载 MedQA 数据集并转换为指定格式
+    Download MedQA and convert to the project's JSONL format.
 
     Args:
-        num_samples: 要提取的数据数量，默认 1000
+        num_samples: Number of samples to export (default: 1000).
     """
     try:
+        num_samples = ensure_int("num_samples", num_samples, min_value=1)
+
+        require_hf_datasets()
         from datasets import load_dataset
-    except ImportError:
-        print("错误: 需要安装 datasets 库")
-        print("请运行: pip install datasets")
-        sys.exit(1)
 
-    print(f"正在加载 MedQA 数据集（更兼容的加载方式）...")
-    print(f"目标: 提取 {num_samples} 条数据")
-
-    try:
-        # 优先尝试从本地 parquet 文件加载（如果在本机上存在）
-        local_parquet_dir = Path("/data1/wwx/02.dataset/med_qa/med_qa_en_source")
+        # Optional: local parquet directory via env var (avoid hardcoding machine paths).
+        local_parquet_dir_env = os.environ.get("MEDQA_PARQUET_DIR", "").strip()
+        local_parquet_dir = Path(local_parquet_dir_env) if local_parquet_dir_env else None
         split_name = "test"
-        if local_parquet_dir.exists():
+        if local_parquet_dir and local_parquet_dir.exists():
             split_file_map = {
                 "train": "train-00000-of-00001.parquet",
                 "test": "test-00000-of-00001.parquet",
                 "validation": "validation-00000-of-00001.parquet"
             }
             file_path = local_parquet_dir / split_file_map.get(split_name, "test-00000-of-00001.parquet")
-            print(f"从本地 parquet 文件加载: {file_path}")
+            maybe_print(verbose, f"loading_local_parquet={file_path}")
             dataset = load_dataset("parquet", data_files=str(file_path), split="train")
         else:
-            # 回退：尝试从 Hugging Face Hub 加载（如果可用）
-            print("本地 parquet 文件未找到，尝试从 Hugging Face Hub 加载（config: med_qa_en_bigbio_qa）")
+            # Fallback: load from Hub.
             dataset = load_dataset("med_qa", "med_qa_en_bigbio_qa", split=split_name)
 
         total_available = len(dataset)
-        print(f"数据集总共有 {total_available} 条数据")
+        num_samples = min(num_samples, total_available)
+        maybe_print(verbose, f"Dataset size: {total_available}; processing: {num_samples}")
 
-        if num_samples > total_available:
-            print(f"警告: 请求的数据量 ({num_samples}) 超过了可用数据量 ({total_available})")
-            print(f"将提取所有 {total_available} 条数据")
-            num_samples = total_available
-
-        # 提取并转换数据（兼容多种字段格式）
         converted_data = []
         for i in range(num_samples):
             item = dataset[i]
 
-            # 兼容不同 schema 的字段名
             question = item.get("question") or item.get("query") or item.get("text") or ""
 
-            # 可能的选项字段: 'options' (list of dicts or list of strings) 或 'choices' (list of strings)
             raw_options = item.get("options") if item.get("options") is not None else item.get("choices")
             choices = []
             option_labels = []
@@ -70,30 +77,26 @@ def download_and_extract_medqa(num_samples: int = 1000):
                 raw_options = []
 
             if isinstance(raw_options, list) and len(raw_options) > 0 and isinstance(raw_options[0], dict):
-                # 每个选项是 dict，尝试读取 'value'/'text' 和 'key'
+                # Each option is a dict; try to read 'value'/'text' and 'key'.
                 for opt in raw_options:
                     val = opt.get("value") or opt.get("text") or ""
                     key = opt.get("key")
                     choices.append(val)
                     option_labels.append(key)
             elif isinstance(raw_options, list):
-                # 列表/字符串
+                # List of strings.
                 choices = [str(x) for x in raw_options]
                 option_labels = [None] * len(choices)
             else:
-                # 兼容旧格式
                 choices = []
                 option_labels = []
 
-            # 生成默认标签 A, B, C...
             alpha_labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
             for idx in range(len(choices)):
                 if not option_labels[idx]:
                     option_labels[idx] = alpha_labels[idx] if idx < len(alpha_labels) else str(idx)
 
-            # 查找正确答案（多种可能字段）
             correct_idx = None
-            # 优先查看 answer_idx（常见于本项目 parquet）
             answer_idx = item.get("answer_idx")
             answer_field = item.get("answer")
 
@@ -101,10 +104,10 @@ def download_and_extract_medqa(num_samples: int = 1000):
                 if lbl is None:
                     return None
                 lbls = str(lbl).strip()
-                # 直接数字
+                # Direct integer index.
                 if lbls.isdigit():
                     return int(lbls)
-                # 匹配字母标签
+                # Match letter labels.
                 for j, lab in enumerate(option_labels):
                     if lab and lbls.lower() == str(lab).lower():
                         return j
@@ -130,15 +133,14 @@ def download_and_extract_medqa(num_samples: int = 1000):
                 correct_idx = label_to_index(answer_field)
 
             if correct_idx is None or correct_idx < 0 or correct_idx >= len(choices):
-                print(f"警告: 第 {i} 条数据没有可用或有效的答案索引，跳过")
+                maybe_print(verbose, f"Warning: skipping sample {i} due to invalid/missing answer")
                 continue
 
             options_text = [f"{option_labels[idx]}. {choices[idx]}" for idx in range(len(choices))]
 
-            # 构建 instruction
             instruction = (
-                f"The following is a multiple choice question about medical knowledge. "
-                f"Please select the correct answer.\n\n"
+                "The following is a multiple choice question about medical knowledge. "
+                "Please select the correct answer.\n\n"
                 f"Question: {question}\n\n"
                 f"Options:\n" + "\n".join(options_text) + "\n\n"
                 f"Please choose the correct answer from {', '.join(option_labels[:len(choices)])}."
@@ -155,70 +157,68 @@ def download_and_extract_medqa(num_samples: int = 1000):
 
             converted_data.append(converted_item)
 
-        # 保存数据
-        script_dir = Path(__file__).parent
-        output_file = script_dir.parent / "data" / "med_qa_1k.jsonl"
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_file, 'w', encoding='utf-8') as f:
-            for item in converted_data:
-                f.write(json.dumps(item, ensure_ascii=False) + '\n')
-
-        print(f"\n成功提取 {len(converted_data)} 条数据")
-        print(f"保存到: {output_file}")
-
-        # 显示统计信息
-        print(f"\n数据统计:")
-        print(f"  总条数: {len(converted_data)}")
-        print(f"  文件大小: {output_file.stat().st_size / 1024 / 1024:.2f} MB")
-
-        # 显示前2个样本
-        print(f"\n前2个样本预览:")
-        for i, item in enumerate(converted_data[:2], 1):
-            print(f"\n[{i}]")
-            print(f"  instruction: {item['instruction'][:200]}...")
-            print(f"  response: {item['response']}")
+        output_file = get_output_data_dir() / "med_qa_1k.jsonl"
+        write_jsonl(output_file, converted_data)
+        maybe_print(verbose, f"\nSaved to: {output_file}")
+        maybe_print(verbose, f"Rows: {len(converted_data)}")
+        try:
+            maybe_print(verbose, f"File size: {human_mb(output_file.stat().st_size)}")
+        except Exception:
+            pass
+        if verbose and preview:
+            print_preview(converted_data, n=preview, instruction_chars=200, response_chars=120)
+        print(f"saved_jsonl={output_file} rows={len(converted_data)}")
 
         return True
 
     except Exception as e:
-        print(f"错误: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"error: {e}")
         return False
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='从 Hugging Face 下载 MedQA 数据集并转换为指定格式',
+        description="Download MedQA and export to JSONL under src/data/",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  python download_med_qa.py           # 下载 1000 条数据（默认）
-  python download_med_qa.py -n 2000   # 下载 2000 条数据
+Examples:
+  python src/utils/download_med_qa.py
+  python src/utils/download_med_qa.py -n 2000
         """
     )
     parser.add_argument(
         '-n', '--num-samples',
         type=int,
         default=1000,
-        help='要提取的数据数量（默认: 1000）'
+        help='Number of samples (default: 1000)'
+    )
+    parser.add_argument(
+        '--quiet',
+        action='store_true',
+        help='Reduce prints (still prints saved_jsonl=... at the end).'
+    )
+    parser.add_argument(
+        '--preview',
+        type=int,
+        default=2,
+        help='How many samples to preview (default: 2). Use 0 to disable.'
     )
 
     args = parser.parse_args()
 
-    # 验证输入
     if args.num_samples <= 0:
-        print("错误: 数据数量必须大于 0")
+        print("error: num_samples must be > 0")
         sys.exit(1)
 
-    # 执行下载和提取
-    success = download_and_extract_medqa(args.num_samples)
+    success = download_and_extract_medqa(
+        args.num_samples,
+        verbose=not args.quiet,
+        preview=(0 if args.quiet else args.preview),
+    )
 
     if success:
-        print("\n✓ 完成!")
+        print("done")
     else:
-        print("\n✗ 失败")
         sys.exit(1)
 
 

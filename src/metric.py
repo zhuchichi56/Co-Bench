@@ -16,10 +16,10 @@ class ReliableMetrics:
         large_scores = large_scores[:min_len]
         router_scores = router_scores[:min_len]
         if dataset_type == 'general':
-            # general类型：对于评分制数据（alpaca, magpie），比较小模型和大模型分数
+            # general type: for scoring datasets (alpaca, magpie), compare small model and large model scores
             labels = (small_scores >= large_scores).astype(int)
         else:
-            # 其他类型：直接使用small_scores作为labels
+            # other types: directly use small_scores as labels
             labels = small_scores
        
         if len(np.unique(labels)) > 1:
@@ -59,7 +59,7 @@ class AdaptiveMetrics:
         large_mean = large_scores.mean()
         
            
-        # 分数越低越优先触发大模型调用，因此直接按升序累积
+        # lower scores trigger large model call first, so accumulate in ascending order
         sorted_indices = np.argsort(router_scores)
         sorted_small = small_scores[sorted_indices]
         sorted_large = large_scores[sorted_indices]
@@ -86,7 +86,7 @@ class AdaptiveMetrics:
         accuracies = np.array(accuracies)
         
 
-        # Calculate LPM within指定 call-rate 区间
+        # Calculate LPM within specified call-rate interval
         lpm_low =  lpm_call_rate_band[0]
         lpm_high = lpm_call_rate_band[1]
         start_idx = np.searchsorted(call_rates, lpm_low, side='left')
@@ -95,16 +95,16 @@ class AdaptiveMetrics:
         LPM = np.mean(accuracies[start_idx:end_idx])
         lpm_threshold = accuracies[min(end_idx - 1, len(accuracies) - 1)]
 
-        # Calculate HPM
+        # Calculate HCR (High Call Rate)
         low_acc_band = small_mean+(large_mean-small_mean)*recovery_rate_band[0]
         high_acc_band = small_mean + (large_mean-small_mean)*recovery_rate_band[1]
         target_mask = (accuracies >= low_acc_band) & (accuracies <= high_acc_band)
         
         if np.any(target_mask):
             target_call_rates = call_rates[target_mask]
-            HPM = 1 - np.mean(target_call_rates)
+            HCR = 1 - np.mean(target_call_rates)
         else:
-            HPM = 0.0
+            HCR = 0.0
         # Calculate MPM
         mpm_mask = (accuracies > lpm_threshold) & (accuracies < low_acc_band)
 
@@ -121,7 +121,7 @@ class AdaptiveMetrics:
             'small_mean':small_mean,
             'large_mean':large_mean,
             'LPM': LPM,
-            'HPM': HPM,
+            'HCR': HCR,
             'MPM': MPM,
             'recovery_rate_band': recovery_rate_band,
             'lpm_call_rate_band': (lpm_low, lpm_high),
@@ -251,7 +251,7 @@ class BatchMetricEvaluator:
             reliable = results['reliable_metrics']
             adaptive = results['adaptive_metrics']
             print(f"{dataset_name}: AUROC={reliable['auroc']:.4f}, "
-                  f"LPM={adaptive['LPM']:.4f}, HPM={adaptive['HPM']:.4f}")
+                  f"LPM={adaptive['LPM']:.4f}, HCR={adaptive['HCR']:.4f}")
 
         # Save summary
         
@@ -260,14 +260,3 @@ class BatchMetricEvaluator:
 
         print(f"\nResults saved to: {self.output_dir}")
         return all_results
-
-
-def evaluate_single_dataset(small_scores: np.ndarray, large_scores: np.ndarray,
-                           router_scores: np.ndarray, dataset_type: str = 'general', **kwargs) -> Dict:
-    evaluator = MetricEvaluator()
-    return evaluator.evaluate_from_scores(small_scores, large_scores, router_scores, dataset_type, **kwargs)
-
-
-def plot_results(adaptive_metrics: Dict, save_path: Optional[str] = None):
-    evaluator = MetricEvaluator()
-    evaluator.plot_adaptive_curve(adaptive_metrics, save_path)

@@ -21,7 +21,10 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 import os
-import fire
+try:
+    import fire  # type: ignore
+except ModuleNotFoundError:
+    fire = None
 from pathlib import Path
 from typing import List, Dict, Tuple
 import logging
@@ -260,4 +263,6 @@ def main(
         dist.destroy_process_group()
 
 if __name__ == "__main__":
+    if fire is None:
+        raise SystemExit("Missing optional dependency 'fire'. Install with: pip install fire")
     fire.Fire(main)

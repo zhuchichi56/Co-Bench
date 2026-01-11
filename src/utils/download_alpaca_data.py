@@ -1,127 +1,120 @@
 #!/usr/bin/env python3
 """
-从 Hugging Face 下载原始 Alpaca 数据集并提取指定数量的数据
-使用方法:
-    python download_alpaca_data.py 10  # 下载 10k 条数据
-    python download_alpaca_data.py 20  # 下载 20k 条数据
+Download Alpaca from HuggingFace and export to JSONL under src/data/.
+
+Examples:
+  python src/utils/download_alpaca_data.py 10   # 10k rows
+  python src/utils/download_alpaca_data.py 52   # full (~52k)
 """
-import json
+
 import argparse
-from pathlib import Path
 import sys
 
+from download_common import (
+    ensure_int,
+    get_output_data_dir,
+    human_mb,
+    maybe_print,
+    print_preview,
+    require_hf_datasets,
+    write_jsonl,
+)
 
-def download_and_extract_alpaca(num_k: int):
+
+def download_and_extract_alpaca(num_k: int, *, verbose: bool = True, preview: int = 3) -> bool:
     """
-    从 Hugging Face 下载 Alpaca 数据集并提取指定数量的数据
+    Download Alpaca from HuggingFace and export a subset.
 
     Args:
-        num_k: 要提取的数据数量（以千为单位）
+        num_k: Number of rows in thousands.
     """
+    num_samples = ensure_int("num_k", num_k, min_value=1) * 1000
+    maybe_print(verbose, "Downloading Alpaca from HuggingFace...")
+    maybe_print(verbose, f"Target: {num_samples} rows")
+
     try:
+        require_hf_datasets()
         from datasets import load_dataset
-    except ImportError:
-        print("错误: 需要安装 datasets 库")
-        print("请运行: pip install datasets")
-        sys.exit(1)
 
-    num_samples = num_k * 1000
-
-    print(f"正在从 Hugging Face 下载 Alpaca 数据集...")
-    print(f"目标: 提取 {num_samples} 条数据")
-
-    try:
-        # 下载 alpaca 数据集
         dataset = load_dataset("tatsu-lab/alpaca", split="train")
-
         total_available = len(dataset)
-        print(f"数据集总共有 {total_available} 条数据")
+        num_samples = min(num_samples, total_available)
+        maybe_print(verbose, f"Dataset size: {total_available}")
+        if num_samples < ensure_int("num_k", num_k, min_value=1) * 1000:
+            maybe_print(verbose, f"Warning: requested more than available, using {num_samples}")
 
-        if num_samples > total_available:
-            print(f"警告: 请求的数据量 ({num_samples}) 超过了可用数据量 ({total_available})")
-            print(f"将提取所有 {total_available} 条数据")
-            num_samples = total_available
-
-        # 提取指定数量的数据
         extracted_data = []
         for i in range(num_samples):
             item = dataset[i]
 
-            # 转换为目标格式
             converted_item = {
                 "instruction": item.get("instruction", ""),
                 "response": item.get("output", "")
             }
 
-            # 如果有 input 字段且不为空，将其添加到 instruction 中
             if item.get("input", "").strip():
                 converted_item["instruction"] = f"{item['instruction']}\n{item['input']}"
 
             extracted_data.append(converted_item)
 
-        # 保存数据
-        script_dir = Path(__file__).parent
-        output_file = script_dir.parent / "data" / f"alpaca_{num_k}k.jsonl"
+        output_file = get_output_data_dir() / f"alpaca_{num_k}k.jsonl"
+        write_jsonl(output_file, extracted_data)
 
-        with open(output_file, 'w', encoding='utf-8') as f:
-            for item in extracted_data:
-                f.write(json.dumps(item, ensure_ascii=False) + '\n')
-
-        print(f"\n成功提取 {len(extracted_data)} 条数据")
-        print(f"保存到: {output_file}")
-
-        # 显示统计信息
-        print(f"\n数据统计:")
-        print(f"  总条数: {len(extracted_data)}")
-        print(f"  文件大小: {output_file.stat().st_size / 1024 / 1024:.2f} MB")
-
-        # 显示前3个样本
-        print(f"\n前3个样本预览:")
-        for i, item in enumerate(extracted_data[:3], 1):
-            print(f"\n[{i}]")
-            print(f"  instruction: {item['instruction'][:100]}...")
-            print(f"  response: {item['response'][:100]}...")
+        maybe_print(verbose, f"\nSaved to: {output_file}")
+        maybe_print(verbose, f"Rows: {len(extracted_data)}")
+        try:
+            maybe_print(verbose, f"File size: {human_mb(output_file.stat().st_size)}")
+        except Exception:
+            pass
+        if preview:
+            print_preview(extracted_data, n=preview, instruction_chars=100, response_chars=100)
+        print(f"saved_jsonl={output_file} rows={len(extracted_data)}")
 
         return True
 
     except Exception as e:
-        print(f"错误: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"error: {e}")
         return False
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='从 Hugging Face 下载 Alpaca 数据集并提取指定数量的数据',
+        description="Download Alpaca and export to JSONL under src/data/",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
-  python download_alpaca_data.py 10   # 下载 10k 条数据
-  python download_alpaca_data.py 20   # 下载 20k 条数据
-  python download_alpaca_data.py 52   # 下载全部数据（约52k条）
+Examples:
+  python src/utils/download_alpaca_data.py 10
+  python src/utils/download_alpaca_data.py 52
         """
     )
     parser.add_argument(
         'num_k',
         type=int,
-        help='要提取的数据数量（以千为单位，例如: 10 表示 10k 条数据）'
+        help='Number of rows in thousands (e.g. 10 means 10k)'
+    )
+    parser.add_argument(
+        '--quiet',
+        action='store_true',
+        help='Reduce prints (still prints saved_jsonl=... at the end).'
+    )
+    parser.add_argument(
+        '--preview',
+        type=int,
+        default=3,
+        help='How many samples to preview (default: 3). Use 0 to disable.'
     )
 
     args = parser.parse_args()
 
-    # 验证输入
     if args.num_k <= 0:
-        print("错误: 数据数量必须大于 0")
+        print("error: num_k must be > 0")
         sys.exit(1)
 
-    # 执行下载和提取
-    success = download_and_extract_alpaca(args.num_k)
+    success = download_and_extract_alpaca(args.num_k, verbose=not args.quiet, preview=args.preview)
 
     if success:
-        print("\n✓ 完成!")
+        print("done")
     else:
-        print("\n✗ 失败")
         sys.exit(1)
 
 

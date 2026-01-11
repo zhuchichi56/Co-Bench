@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple, Any
+from pathlib import Path
 import os
 import yaml
 
@@ -63,24 +64,14 @@ class InferenceConfig:
 @dataclass
 class RouterConfig:
     """Router-specific configuration"""
-
     router_type: str = "probe" # "probe", "self_questioning", "deberta", "trained_deberta", "llm", "logits_margin", "semantic_entropy", "max_logits", "top10_variance", "coe", "entropy", "confidence_margin", "embedding_mlp"
-
     # Probe router settings
     checkpoint_path: Optional[str] = "probe_save/mixed_mmlu_full_numina_cot_5k_balanced_probe_mean.pt"
     probe_type: str = "mean"
-    # hidden_states_file: Optional[str] = "/HOME/sustc_ghchen/sustc_ghchen_4/HDD_POOL/logits/Qwen2.5-7B-Instruct_aime24.pt"
-    use_sampling: bool = False  # Whether to enable sampling for dynamic fusion probes
-
-    # Model router settings (self_questioning, deberta, trained_deberta, llm, logits_margin, semantic_entropy)
     model_path: Optional[str] = None
-
-
-    # Semantic entropy specific settings
-    num_samples: int = 5  # Number of samples (semantic entropy or dynamic fusion sampling)
-
-    # EmbeddingMLP settings
-    embedding_files: Optional[List[str]] = None  # list of .pt files containing query_embedding + acc_label
+    num_samples: int = 5
+    embedding_files: Optional[List[str]] = None
+    embedding_dir: Optional[str] = None  # optional: directory containing "{task}_query_embeddings.pt"
 
     def to_dict(self, inference_config=None) -> Dict[str, Any]:
         """Convert to dictionary format for compatibility"""
@@ -90,13 +81,13 @@ class RouterConfig:
             config_dict.update({
                 "checkpoint_path": self.checkpoint_path,
                 "probe_type": self.probe_type,
-                "use_sampling": self.use_sampling,
                 "num_samples": self.num_samples
             })
         elif self.router_type == "embedding_mlp":
             config_dict.update({
                 "checkpoint_path": self.checkpoint_path,
-                "embedding_files": getattr(self, "embedding_files", None)
+                "embedding_files": getattr(self, "embedding_files", None),
+                "embedding_dir": getattr(self, "embedding_dir", None),
             })
         elif self.router_type in ["self_questioning", "deberta", "trained_deberta", "llm", "logits_margin", "semantic_entropy"]:
             # Use weak model if not specified
@@ -129,19 +120,18 @@ class TrainingConfig:
     mlp_dropout: float = 0.1  # Dropout rate for MLP probe layers
     conv_channels: int = 32  # Number of channels for ConvProbe
     conv_kernel_size: int = 3  # Kernel size for ConvProbe
-    transformer_num_heads: int = 4  # Number of attention heads for TransformerProbe
-    transformer_num_layers: int = 2  # Number of transformer layers for TransformerProbe
 
-    # Reward model training
-    reward_model_name: str = "microsoft/deberta-v3-base"
-    reward_output_dir: str = "reward_model"
-    logits_output_dir: str = "/HOME/sustc_ghchen/sustc_ghchen_4/HDD_POOL/logits/"
+    logits_output_dir: str = "hs"
     probe_save_path: str = "probe_save"
     query_embedding_output_dir: str = "query_embeddings_output"
     embedding_mlp_save_path: str = "embedding_mlp"
     embedding_hidden_dims: Optional[List[int]] = None
     embedding_dropout: float = 0.1
     seed: int = 42
+    # Training-only runtime options (used by train mode; may also be referenced by eval for probe sweeps)
+    max_samples: int = 4000
+    save_loss_history: bool = False
+    probe_types: List[str] = field(default_factory=lambda: ["hs_last_mlp", "mean", "max", "coe_dual_mlp"])
 
     # DeBERTa router training
     deberta_train_path: Optional[str] = None
@@ -171,6 +161,11 @@ class PipelineConfig:
     recovery_rate_band: Tuple[float, float] = (0.91, 0.92)
     lpm_call_rate_band: Tuple[float, float] = (0.0, 0.1)
 
+    probe_dir: Optional[str] = None  # optional: evaluate all probe checkpoints in a directory
+    prepare_steps: List[str] = field(default_factory=lambda: ["scores", "logits", "embeddings"])
+    prepare_text_field: str = "instruction"
+    prepare_embed_batch_size: int = 64
+
     # Default datasets
     # default_datasets: List[str] = field(default_factory=lambda: ["aime24"])
 
@@ -181,44 +176,50 @@ class PipelineConfig:
 
     @classmethod
     def from_yaml(cls):
-        """自动检测机器并加载对应配置"""
-        def detect_machine():
-            """检测当前机器类型"""
-            # 方法1: 检查hostname
-            import socket
-            hostname = socket.gethostname()
+        """Load configuration from config_B.yaml"""
+        # Use relative path: config_B.yaml is located in the project root directory
+        config_file = Path(__file__).parent.parent / "config_B.yaml"
 
-            # 方法2: 检查特定路径是否存在
-            if os.path.exists("/data1/wwx/models/models"):
-                return "A"
-            elif os.path.exists("/volume/pt-train/users/wzhang/ghchen/zh/CoBench"):  # 替换为机器B的特征路径
-                return "B"
-
-            # 方法3: 检查环境变量（备用）
-            if "MACHINE_ID" in os.environ:
-                return os.environ["MACHINE_ID"]
-
-            # 默认为A
-            return "A"
-
-        machine_id = detect_machine()
-        config_file = f"/volume/pt-train/users/wzhang/ghchen/zh/CoBench/config_{machine_id}.yaml"
-
-        if not os.path.exists(config_file):
-            print(f"配置文件 {config_file} 不存在，使用默认配置")
+        if not config_file.exists():
+            print(f"Config file {config_file} does not exist, using default configuration")
             return cls()
 
-        print(f"自动检测为机器 {machine_id}，加载配置: {config_file}")
+        print(f"Loading configuration from: {config_file}")
 
         with open(config_file, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
 
+        # Compatibility handling:
+        # - keep prepare_* and probe_dir at PipelineConfig top-level
+        # - keep max_samples/save_loss_history/probe_types in TrainingConfig
+        training_data = dict(data.get('training', {}) or {})
+        router_data = dict(data.get('router', {}) or {})
+
+        lifted_to_pipeline = {}
+
+        # Lift from router -> pipeline
+        if "probe_dir" in router_data:
+            lifted_to_pipeline["probe_dir"] = router_data.pop("probe_dir")
+
+        # Lift from training -> pipeline (prepare-related)
+        for k in ["prepare_steps", "prepare_text_field", "prepare_embed_batch_size"]:
+            if k in training_data:
+                lifted_to_pipeline[k] = training_data.pop(k)
+
+        # Also accept these keys at top-level and merge into training (training-only options)
+        for k in ["max_samples", "save_loss_history", "probe_types"]:
+            if k in data and k not in training_data:
+                training_data[k] = data[k]
+
         inference_config = InferenceConfig(**data.get('inference', {}))
-        router_config = RouterConfig(**data.get('router', {}))
-        training_config = TrainingConfig(**data.get('training', {}))
+        router_config = RouterConfig(**router_data)
+        training_config = TrainingConfig(**training_data)
 
         pipeline_data = {k: v for k, v in data.items()
-                        if k not in ['inference', 'router', 'training']}
+                        if k not in ['inference', 'router', 'training',
+                                     # prevent passing training-only keys twice
+                                     'max_samples', 'save_loss_history', 'probe_types']}
+        pipeline_data.update(lifted_to_pipeline)
 
         return cls(
             inference=inference_config,

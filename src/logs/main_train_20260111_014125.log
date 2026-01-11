@@ -1,0 +1,283 @@
+
+
+=== load_config ===
+Loading configuration from: /volume/pt-train/users/wzhang/ghchen/zh/CoBench/config_B.yaml
+
+
+=== train_probe probe_type=mean ===
+🚀 Starting mixed dataset probe training for tasks: ['alpaca_5k_train', 'big_math_5k_train', 'mmlu_train']
+📊 Mix strategy: balanced
+🎯 Max samples: 4000
+📁 Loading dataset for task: alpaca_5k_train
+   📊 alpaca_5k_train: 4000 samples (1077 pos, 2923 neg)
+📁 Loading dataset for task: big_math_5k_train
+   📊 big_math_5k_train: 4000 samples (2698 pos, 1302 neg)
+📁 Loading dataset for task: mmlu_train
+   📊 mmlu_train: 3980 samples (2761 pos, 1219 neg)
+🔄 Mixing datasets using strategy: balanced
+Mixed dataset: 3999 total samples
+   Positive samples: 2179 (54.5%)
+Train/Val split: 3199 train, 800 val samples
+Training probe model on mixed datasets
+
+================================================================================
+Model Architecture:
+MeanProbe(
+  (fc): Linear(in_features=4096, out_features=1, bias=True)
+)
+
+--------------------------------------------------------------------------------
+🔧 Using DataParallel with 6 GPUs
+Epoch 1: Train Loss=0.6702, Val Loss=0.6482, Val Acc=0.6388, Val AUROC=0.6685, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.6482, Val Acc: 0.6388, Val AUROC: 0.6685
+Epoch 2: Train Loss=0.6469, Val Loss=0.6318, Val Acc=0.6687, Val AUROC=0.6807, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.6318, Val Acc: 0.6687, Val AUROC: 0.6807
+Epoch 3: Train Loss=0.6306, Val Loss=0.6205, Val Acc=0.6813, Val AUROC=0.6863, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.6205, Val Acc: 0.6813, Val AUROC: 0.6863
+Epoch 4: Train Loss=0.6211, Val Loss=0.6120, Val Acc=0.6825, Val AUROC=0.6889, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.6120, Val Acc: 0.6825, Val AUROC: 0.6889
+Epoch 5: Train Loss=0.6136, Val Loss=0.6059, Val Acc=0.6837, Val AUROC=0.6923, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.6059, Val Acc: 0.6837, Val AUROC: 0.6923
+Epoch 6: Train Loss=0.6095, Val Loss=0.6015, Val Acc=0.6825, Val AUROC=0.6952, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.6015, Val Acc: 0.6825, Val AUROC: 0.6952
+Epoch 7: Train Loss=0.6046, Val Loss=0.5980, Val Acc=0.6813, Val AUROC=0.6982, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5980, Val Acc: 0.6813, Val AUROC: 0.6982
+Epoch 8: Train Loss=0.6029, Val Loss=0.5953, Val Acc=0.6775, Val AUROC=0.7014, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5953, Val Acc: 0.6775, Val AUROC: 0.7014
+Epoch 9: Train Loss=0.5989, Val Loss=0.5931, Val Acc=0.6775, Val AUROC=0.7052, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5931, Val Acc: 0.6775, Val AUROC: 0.7052
+Epoch 10: Train Loss=0.5972, Val Loss=0.5911, Val Acc=0.6787, Val AUROC=0.7081, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5911, Val Acc: 0.6787, Val AUROC: 0.7081
+Epoch 11: Train Loss=0.5948, Val Loss=0.5894, Val Acc=0.6787, Val AUROC=0.7115, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5894, Val Acc: 0.6787, Val AUROC: 0.7115
+Epoch 12: Train Loss=0.5945, Val Loss=0.5879, Val Acc=0.6787, Val AUROC=0.7144, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5879, Val Acc: 0.6787, Val AUROC: 0.7144
+Epoch 13: Train Loss=0.5925, Val Loss=0.5866, Val Acc=0.6825, Val AUROC=0.7176, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5866, Val Acc: 0.6825, Val AUROC: 0.7176
+Epoch 14: Train Loss=0.5892, Val Loss=0.5849, Val Acc=0.6813, Val AUROC=0.7202, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5849, Val Acc: 0.6813, Val AUROC: 0.7202
+Epoch 15: Train Loss=0.5878, Val Loss=0.5835, Val Acc=0.6837, Val AUROC=0.7228, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5835, Val Acc: 0.6837, Val AUROC: 0.7228
+Epoch 16: Train Loss=0.5864, Val Loss=0.5822, Val Acc=0.6850, Val AUROC=0.7246, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5822, Val Acc: 0.6850, Val AUROC: 0.7246
+Epoch 17: Train Loss=0.5847, Val Loss=0.5810, Val Acc=0.6850, Val AUROC=0.7268, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5810, Val Acc: 0.6850, Val AUROC: 0.7268
+Epoch 18: Train Loss=0.5833, Val Loss=0.5798, Val Acc=0.6850, Val AUROC=0.7288, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5798, Val Acc: 0.6850, Val AUROC: 0.7288
+Epoch 19: Train Loss=0.5822, Val Loss=0.5785, Val Acc=0.6887, Val AUROC=0.7305, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5785, Val Acc: 0.6887, Val AUROC: 0.7305
+Epoch 20: Train Loss=0.5788, Val Loss=0.5777, Val Acc=0.6887, Val AUROC=0.7322, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5777, Val Acc: 0.6887, Val AUROC: 0.7322
+Epoch 21: Train Loss=0.5787, Val Loss=0.5766, Val Acc=0.6887, Val AUROC=0.7340, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5766, Val Acc: 0.6887, Val AUROC: 0.7340
+Epoch 22: Train Loss=0.5777, Val Loss=0.5755, Val Acc=0.6900, Val AUROC=0.7350, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5755, Val Acc: 0.6900, Val AUROC: 0.7350
+Epoch 23: Train Loss=0.5760, Val Loss=0.5747, Val Acc=0.6900, Val AUROC=0.7366, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5747, Val Acc: 0.6900, Val AUROC: 0.7366
+Epoch 24: Train Loss=0.5750, Val Loss=0.5735, Val Acc=0.6913, Val AUROC=0.7376, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5735, Val Acc: 0.6913, Val AUROC: 0.7376
+Epoch 25: Train Loss=0.5733, Val Loss=0.5727, Val Acc=0.6900, Val AUROC=0.7389, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5727, Val Acc: 0.6900, Val AUROC: 0.7389
+Epoch 26: Train Loss=0.5739, Val Loss=0.5724, Val Acc=0.6937, Val AUROC=0.7407, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5724, Val Acc: 0.6937, Val AUROC: 0.7407
+Epoch 27: Train Loss=0.5709, Val Loss=0.5710, Val Acc=0.6925, Val AUROC=0.7413, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5710, Val Acc: 0.6925, Val AUROC: 0.7413
+Epoch 28: Train Loss=0.5713, Val Loss=0.5704, Val Acc=0.6925, Val AUROC=0.7425, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5704, Val Acc: 0.6925, Val AUROC: 0.7425
+Epoch 29: Train Loss=0.5683, Val Loss=0.5696, Val Acc=0.6937, Val AUROC=0.7434, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5696, Val Acc: 0.6937, Val AUROC: 0.7434
+Epoch 30: Train Loss=0.5679, Val Loss=0.5688, Val Acc=0.6950, Val AUROC=0.7442, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5688, Val Acc: 0.6950, Val AUROC: 0.7442
+Epoch 31: Train Loss=0.5681, Val Loss=0.5682, Val Acc=0.6950, Val AUROC=0.7451, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5682, Val Acc: 0.6950, Val AUROC: 0.7451
+Epoch 32: Train Loss=0.5660, Val Loss=0.5675, Val Acc=0.6950, Val AUROC=0.7459, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5675, Val Acc: 0.6950, Val AUROC: 0.7459
+Epoch 33: Train Loss=0.5661, Val Loss=0.5668, Val Acc=0.6937, Val AUROC=0.7466, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5668, Val Acc: 0.6937, Val AUROC: 0.7466
+Epoch 34: Train Loss=0.5629, Val Loss=0.5664, Val Acc=0.6950, Val AUROC=0.7474, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5664, Val Acc: 0.6950, Val AUROC: 0.7474
+Epoch 35: Train Loss=0.5644, Val Loss=0.5657, Val Acc=0.6975, Val AUROC=0.7484, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5657, Val Acc: 0.6975, Val AUROC: 0.7484
+Epoch 36: Train Loss=0.5627, Val Loss=0.5652, Val Acc=0.6987, Val AUROC=0.7490, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5652, Val Acc: 0.6987, Val AUROC: 0.7490
+Epoch 37: Train Loss=0.5616, Val Loss=0.5643, Val Acc=0.6975, Val AUROC=0.7497, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5643, Val Acc: 0.6975, Val AUROC: 0.7497
+Epoch 38: Train Loss=0.5600, Val Loss=0.5640, Val Acc=0.7000, Val AUROC=0.7505, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5640, Val Acc: 0.7000, Val AUROC: 0.7505
+Epoch 39: Train Loss=0.5594, Val Loss=0.5634, Val Acc=0.7000, Val AUROC=0.7508, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5634, Val Acc: 0.7000, Val AUROC: 0.7508
+Epoch 40: Train Loss=0.5590, Val Loss=0.5629, Val Acc=0.6987, Val AUROC=0.7511, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5629, Val Acc: 0.6987, Val AUROC: 0.7511
+Epoch 41: Train Loss=0.5579, Val Loss=0.5622, Val Acc=0.7000, Val AUROC=0.7517, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5622, Val Acc: 0.7000, Val AUROC: 0.7517
+Epoch 42: Train Loss=0.5570, Val Loss=0.5621, Val Acc=0.7013, Val AUROC=0.7524, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5621, Val Acc: 0.7013, Val AUROC: 0.7524
+Epoch 43: Train Loss=0.5563, Val Loss=0.5615, Val Acc=0.7013, Val AUROC=0.7528, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5615, Val Acc: 0.7013, Val AUROC: 0.7528
+Epoch 44: Train Loss=0.5552, Val Loss=0.5611, Val Acc=0.7000, Val AUROC=0.7531, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5611, Val Acc: 0.7000, Val AUROC: 0.7531
+Epoch 45: Train Loss=0.5544, Val Loss=0.5606, Val Acc=0.7000, Val AUROC=0.7532, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5606, Val Acc: 0.7000, Val AUROC: 0.7532
+Epoch 46: Train Loss=0.5540, Val Loss=0.5600, Val Acc=0.7000, Val AUROC=0.7539, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5600, Val Acc: 0.7000, Val AUROC: 0.7539
+Epoch 47: Train Loss=0.5524, Val Loss=0.5597, Val Acc=0.7013, Val AUROC=0.7543, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5597, Val Acc: 0.7013, Val AUROC: 0.7543
+Epoch 48: Train Loss=0.5524, Val Loss=0.5595, Val Acc=0.7000, Val AUROC=0.7546, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5595, Val Acc: 0.7000, Val AUROC: 0.7546
+Epoch 49: Train Loss=0.5505, Val Loss=0.5588, Val Acc=0.7025, Val AUROC=0.7554, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5588, Val Acc: 0.7025, Val AUROC: 0.7554
+Epoch 50: Train Loss=0.5518, Val Loss=0.5587, Val Acc=0.7050, Val AUROC=0.7556, LR=0.000100
+💾 Model saved to probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+💾 New best model saved! Val Loss: 0.5587, Val Acc: 0.7050, Val AUROC: 0.7556
+Mixed dataset probe training complete!
+Best val loss: 0.5587
+Model saved to: probe_save/base/probe/4000samples_mixed_alpaca_5k_train_big_math_5k_train_mmlu_train_mean.pt
+Epoch 1/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 1/50 - Training:   6%|5         | 1/17 [00:05<01:27,  5.47s/it]Epoch 1/50 - Training: 100%|##########| 17/17 [00:05<00:00,  2.94it/s]
+Epoch 1/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 1/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.25s/it]Epoch 1/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.29it/s]
+Epoch 2/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 2/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.27s/it]Epoch 2/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.21it/s]Epoch 2/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.73it/s]
+Epoch 2/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 2/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.10s/it]Epoch 2/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  5.38it/s]Epoch 2/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.41it/s]
+Epoch 3/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 3/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.38s/it]Epoch 3/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.32it/s]Epoch 3/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.83it/s]
+Epoch 3/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 3/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.18s/it]Epoch 3/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.44it/s]
+Epoch 4/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 4/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.19s/it]Epoch 4/50 - Training:  24%|##3       | 4/17 [00:01<00:03,  3.77it/s]Epoch 4/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.98it/s]Epoch 4/50 - Training:  76%|#######6  | 13/17 [00:01<00:00, 12.52it/s]Epoch 4/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.79it/s]
+Epoch 4/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 4/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.20s/it]Epoch 4/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.38it/s]
+Epoch 5/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 5/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.23s/it]Epoch 5/50 - Training:  41%|####1     | 7/17 [00:01<00:01,  6.98it/s]Epoch 5/50 - Training:  65%|######4   | 11/17 [00:01<00:00, 10.11it/s]Epoch 5/50 - Training: 100%|##########| 17/17 [00:01<00:00,  9.28it/s]
+Epoch 5/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 5/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.15s/it]Epoch 5/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.44it/s]
+Epoch 6/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 6/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.29s/it]Epoch 6/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.70it/s]Epoch 6/50 - Training: 100%|##########| 17/17 [00:01<00:00,  9.13it/s]
+Epoch 6/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 6/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.16s/it]Epoch 6/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.40it/s]
+Epoch 7/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 7/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.34s/it]Epoch 7/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.50it/s]Epoch 7/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.92it/s]
+Epoch 7/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 7/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.19s/it]Epoch 7/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.44it/s]
+Epoch 8/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 8/50 - Training:   6%|5         | 1/17 [00:01<00:17,  1.10s/it]Epoch 8/50 - Training:  18%|#7        | 3/17 [00:01<00:04,  2.94it/s]Epoch 8/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  9.02it/s]Epoch 8/50 - Training: 100%|##########| 17/17 [00:01<00:00,  9.29it/s]
+Epoch 8/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 8/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.20s/it]Epoch 8/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.21it/s]
+Epoch 9/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 9/50 - Training:   6%|5         | 1/17 [00:01<00:18,  1.17s/it]Epoch 9/50 - Training:  18%|#7        | 3/17 [00:01<00:05,  2.71it/s]Epoch 9/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.90it/s]Epoch 9/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.92it/s]
+Epoch 9/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 9/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.09s/it]Epoch 9/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.38it/s]
+Epoch 10/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 10/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.37s/it]Epoch 10/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.70it/s]Epoch 10/50 - Training:  94%|#########4| 16/17 [00:01<00:00, 14.44it/s]Epoch 10/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.64it/s]
+Epoch 10/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 10/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.16s/it]Epoch 10/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.46it/s]
+Epoch 11/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 11/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.38s/it]Epoch 11/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.07it/s]Epoch 11/50 - Training:  88%|########8 | 15/17 [00:01<00:00, 12.35it/s]Epoch 11/50 - Training: 100%|##########| 17/17 [00:02<00:00,  7.92it/s]
+Epoch 11/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 11/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.50s/it]Epoch 11/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  2.76it/s]
+Epoch 12/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 12/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.26s/it]Epoch 12/50 - Training:  18%|#7        | 3/17 [00:01<00:05,  2.70it/s]Epoch 12/50 - Training:  29%|##9       | 5/17 [00:01<00:02,  4.86it/s]Epoch 12/50 - Training:  65%|######4   | 11/17 [00:01<00:00, 12.40it/s]Epoch 12/50 - Training:  94%|#########4| 16/17 [00:01<00:00, 18.65it/s]Epoch 12/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.39it/s]
+Epoch 12/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 12/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.27s/it]Epoch 12/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.17it/s]
+Epoch 13/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 13/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.21s/it]Epoch 13/50 - Training:  29%|##9       | 5/17 [00:01<00:02,  4.68it/s]Epoch 13/50 - Training:  41%|####1     | 7/17 [00:01<00:01,  5.97it/s]Epoch 13/50 - Training:  82%|########2 | 14/17 [00:01<00:00, 14.71it/s]Epoch 13/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.59it/s]
+Epoch 13/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 13/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.23s/it]Epoch 13/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.18it/s]
+Epoch 14/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 14/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.35s/it]Epoch 14/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.32it/s]Epoch 14/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.81it/s]
+Epoch 14/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 14/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.28s/it]Epoch 14/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.18it/s]
+Epoch 15/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 15/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.22s/it]Epoch 15/50 - Training:  24%|##3       | 4/17 [00:01<00:03,  3.76it/s]Epoch 15/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  9.44it/s]Epoch 15/50 - Training:  71%|#######   | 12/17 [00:01<00:00, 11.78it/s]Epoch 15/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.73it/s]
+Epoch 15/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 15/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 15/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.20it/s]
+Epoch 16/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 16/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.34s/it]Epoch 16/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  6.98it/s]Epoch 16/50 - Training: 100%|##########| 17/17 [00:01<00:00, 14.43it/s]Epoch 16/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.27it/s]
+Epoch 16/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 16/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.19s/it]Epoch 16/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.28it/s]
+Epoch 17/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 17/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.26s/it]Epoch 17/50 - Training:  24%|##3       | 4/17 [00:01<00:03,  3.59it/s]Epoch 17/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.92it/s]Epoch 17/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.63it/s]
+Epoch 17/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 17/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 17/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.25it/s]
+Epoch 18/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 18/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.22s/it]Epoch 18/50 - Training:  12%|#1        | 2/17 [00:01<00:09,  1.65it/s]Epoch 18/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  9.75it/s]Epoch 18/50 - Training:  71%|#######   | 12/17 [00:01<00:00, 11.51it/s]Epoch 18/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.51it/s]
+Epoch 18/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 18/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.19s/it]Epoch 18/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.18it/s]
+Epoch 19/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 19/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.37s/it]Epoch 19/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.14it/s]Epoch 19/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.76it/s]
+Epoch 19/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 19/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.27s/it]Epoch 19/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.20it/s]
+Epoch 20/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 20/50 - Training:   6%|5         | 1/17 [00:01<00:23,  1.46s/it]Epoch 20/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  6.82it/s]Epoch 20/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.37it/s]
+Epoch 20/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 20/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 20/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.15it/s]
+Epoch 21/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 21/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.42s/it]Epoch 21/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  6.54it/s]Epoch 21/50 - Training: 100%|##########| 17/17 [00:02<00:00,  7.38it/s]
+Epoch 21/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 21/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.39s/it]Epoch 21/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  2.91it/s]
+Epoch 22/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 22/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.24s/it]Epoch 22/50 - Training:  18%|#7        | 3/17 [00:01<00:05,  2.62it/s]Epoch 22/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.92it/s]Epoch 22/50 - Training: 100%|##########| 17/17 [00:01<00:00, 18.18it/s]Epoch 22/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.61it/s]
+Epoch 22/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 22/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.28s/it]Epoch 22/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.13it/s]
+Epoch 23/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 23/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.38s/it]Epoch 23/50 - Training:  47%|####7     | 8/17 [00:01<00:01,  7.13it/s]Epoch 23/50 - Training:  71%|#######   | 12/17 [00:01<00:00,  9.08it/s]Epoch 23/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.02it/s]
+Epoch 23/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 23/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.27s/it]Epoch 23/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.20it/s]
+Epoch 24/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 24/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.23s/it]Epoch 24/50 - Training:  29%|##9       | 5/17 [00:01<00:02,  4.80it/s]Epoch 24/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  9.09it/s]Epoch 24/50 - Training:  76%|#######6  | 13/17 [00:01<00:00, 13.47it/s]Epoch 24/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.95it/s]
+Epoch 24/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 24/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.25s/it]Epoch 24/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.19it/s]
+Epoch 25/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 25/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.41s/it]Epoch 25/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.54it/s]Epoch 25/50 - Training: 100%|##########| 17/17 [00:01<00:00, 15.42it/s]Epoch 25/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.62it/s]
+Epoch 25/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 25/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.22s/it]Epoch 25/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.21it/s]
+Epoch 26/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 26/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.35s/it]Epoch 26/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.23it/s]Epoch 26/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.84it/s]
+Epoch 26/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 26/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.18s/it]Epoch 26/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.25it/s]
+Epoch 27/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 27/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.24s/it]Epoch 27/50 - Training:  35%|###5      | 6/17 [00:01<00:01,  5.81it/s]Epoch 27/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  8.43it/s]Epoch 27/50 - Training: 100%|##########| 17/17 [00:01<00:00, 18.86it/s]Epoch 27/50 - Training: 100%|##########| 17/17 [00:01<00:00,  9.06it/s]
+Epoch 27/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 27/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.14s/it]Epoch 27/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.32it/s]
+Epoch 28/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 28/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.31s/it]Epoch 28/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.38it/s]Epoch 28/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.89it/s]
+Epoch 28/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 28/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.25s/it]Epoch 28/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.16it/s]
+Epoch 29/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 29/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.30s/it]Epoch 29/50 - Training:  29%|##9       | 5/17 [00:01<00:02,  4.58it/s]Epoch 29/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.00it/s]Epoch 29/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.67it/s]
+Epoch 29/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 29/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.27s/it]Epoch 29/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.00it/s]
+Epoch 30/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 30/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.39s/it]Epoch 30/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.26it/s]Epoch 30/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.58it/s]
+Epoch 30/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 30/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.16s/it]Epoch 30/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.36it/s]
+Epoch 31/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 31/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.32s/it]Epoch 31/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.53it/s]Epoch 31/50 - Training: 100%|##########| 17/17 [00:01<00:00,  9.02it/s]
+Epoch 31/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 31/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 31/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.26it/s]
+Epoch 32/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 32/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.33s/it]Epoch 32/50 - Training:  12%|#1        | 2/17 [00:01<00:09,  1.62it/s]Epoch 32/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  8.71it/s]Epoch 32/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.41it/s]
+Epoch 32/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 32/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.18s/it]Epoch 32/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.30it/s]
+Epoch 33/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 33/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.27s/it]Epoch 33/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.59it/s]Epoch 33/50 - Training: 100%|##########| 17/17 [00:01<00:00,  9.00it/s]
+Epoch 33/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 33/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.13s/it]Epoch 33/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.43it/s]
+Epoch 34/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 34/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.33s/it]Epoch 34/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.27it/s]Epoch 34/50 - Training:  88%|########8 | 15/17 [00:01<00:00, 13.30it/s]Epoch 34/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.80it/s]
+Epoch 34/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 34/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 34/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.26it/s]
+Epoch 35/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 35/50 - Training:   6%|5         | 1/17 [00:01<00:19,  1.20s/it]Epoch 35/50 - Training:  24%|##3       | 4/17 [00:01<00:03,  3.63it/s]Epoch 35/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.68it/s]Epoch 35/50 - Training:  76%|#######6  | 13/17 [00:01<00:00, 12.37it/s]Epoch 35/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.67it/s]
+Epoch 35/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 35/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.15s/it]Epoch 35/50 - Validation:  80%|########  | 4/5 [00:01<00:00,  4.09it/s]Epoch 35/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.28it/s]
+Epoch 36/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 36/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.27s/it]Epoch 36/50 - Training:  47%|####7     | 8/17 [00:01<00:01,  7.65it/s]Epoch 36/50 - Training:  71%|#######   | 12/17 [00:01<00:00,  9.97it/s]Epoch 36/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.81it/s]
+Epoch 36/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 36/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.17s/it]Epoch 36/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.30it/s]
+Epoch 37/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 37/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.37s/it]Epoch 37/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.69it/s]Epoch 37/50 - Training:  76%|#######6  | 13/17 [00:01<00:00, 11.01it/s]Epoch 37/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.33it/s]
+Epoch 37/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 37/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.19s/it]Epoch 37/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.12it/s]
+Epoch 38/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 38/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.37s/it]Epoch 38/50 - Training:  12%|#1        | 2/17 [00:01<00:09,  1.57it/s]Epoch 38/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  9.02it/s]Epoch 38/50 - Training:  71%|#######   | 12/17 [00:01<00:00, 11.21it/s]Epoch 38/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.07it/s]
+Epoch 38/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 38/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.29s/it]Epoch 38/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.06it/s]
+Epoch 39/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 39/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.40s/it]Epoch 39/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.37it/s]Epoch 39/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.62it/s]
+Epoch 39/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 39/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.18s/it]Epoch 39/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.21it/s]
+Epoch 40/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 40/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.33s/it]Epoch 40/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.50it/s]Epoch 40/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.66it/s]
+Epoch 40/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 40/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 40/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.15it/s]
+Epoch 41/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 41/50 - Training:   6%|5         | 1/17 [00:01<00:25,  1.57s/it]Epoch 41/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  6.55it/s]Epoch 41/50 - Training: 100%|##########| 17/17 [00:02<00:00,  7.96it/s]
+Epoch 41/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 41/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.36s/it]Epoch 41/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  2.97it/s]
+Epoch 42/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 42/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.40s/it]Epoch 42/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.19it/s]Epoch 42/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.59it/s]
+Epoch 42/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 42/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.29s/it]Epoch 42/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.06it/s]
+Epoch 43/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 43/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.27s/it]Epoch 43/50 - Training:  18%|#7        | 3/17 [00:01<00:05,  2.65it/s]Epoch 43/50 - Training:  59%|#####8    | 10/17 [00:01<00:00,  9.27it/s]Epoch 43/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.64it/s]
+Epoch 43/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 43/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.28s/it]Epoch 43/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.05it/s]
+Epoch 44/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 44/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.42s/it]Epoch 44/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  6.76it/s]Epoch 44/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.34it/s]
+Epoch 44/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 44/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.16s/it]Epoch 44/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.27it/s]
+Epoch 45/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 45/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.39s/it]Epoch 45/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.76it/s]Epoch 45/50 - Training: 100%|##########| 17/17 [00:01<00:00, 15.75it/s]Epoch 45/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.71it/s]
+Epoch 45/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 45/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.24s/it]Epoch 45/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.21it/s]
+Epoch 46/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 46/50 - Training:   6%|5         | 1/17 [00:01<00:18,  1.18s/it]Epoch 46/50 - Training:  24%|##3       | 4/17 [00:01<00:03,  3.90it/s]Epoch 46/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  9.68it/s]Epoch 46/50 - Training:  71%|#######   | 12/17 [00:01<00:00, 11.90it/s]Epoch 46/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.75it/s]
+Epoch 46/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 46/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.20s/it]Epoch 46/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.16it/s]
+Epoch 47/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 47/50 - Training:   6%|5         | 1/17 [00:01<00:21,  1.35s/it]Epoch 47/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.79it/s]Epoch 47/50 - Training:  71%|#######   | 12/17 [00:01<00:00,  9.82it/s]Epoch 47/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.61it/s]
+Epoch 47/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 47/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.17s/it]Epoch 47/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.22it/s]
+Epoch 48/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 48/50 - Training:   6%|5         | 1/17 [00:01<00:24,  1.51s/it]Epoch 48/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  6.77it/s]Epoch 48/50 - Training: 100%|##########| 17/17 [00:02<00:00,  8.16it/s]
+Epoch 48/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 48/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.20s/it]Epoch 48/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.20it/s]
+Epoch 49/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 49/50 - Training:   6%|5         | 1/17 [00:01<00:22,  1.43s/it]Epoch 49/50 - Training:  53%|#####2    | 9/17 [00:01<00:01,  7.11it/s]Epoch 49/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.70it/s]
+Epoch 49/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 49/50 - Validation:  20%|##        | 1/5 [00:01<00:04,  1.25s/it]Epoch 49/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.16it/s]
+Epoch 50/50 - Training:   0%|          | 0/17 [00:00<?, ?it/s]Epoch 50/50 - Training:   6%|5         | 1/17 [00:01<00:20,  1.27s/it]Epoch 50/50 - Training:  53%|#####2    | 9/17 [00:01<00:00,  8.65it/s]Epoch 50/50 - Training:  82%|########2 | 14/17 [00:01<00:00, 12.14it/s]Epoch 50/50 - Training: 100%|##########| 17/17 [00:01<00:00,  8.92it/s]
+Epoch 50/50 - Validation:   0%|          | 0/5 [00:00<?, ?it/s]Epoch 50/50 - Validation:  20%|##        | 1/5 [00:01<00:05,  1.25s/it]Epoch 50/50 - Validation: 100%|##########| 5/5 [00:01<00:00,  3.25it/s]

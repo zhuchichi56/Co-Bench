@@ -1,12 +1,15 @@
 # Large files and results
+results/
 src/results/
 src/qwen2.5-results/
+src/query_embeddings_output/
 outputs/
 no_use/
 hs/
 probe_save/
 wandb/
-visualizations/
+/visualizations/
+src/utils/visualizations/
 src/metric_results/
 *.jsonl
 *.png

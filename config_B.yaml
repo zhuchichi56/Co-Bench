@@ -6,16 +6,14 @@ recovery_rate_band: [0.85, 0.95]
 lpm_call_rate_band: [0.25, 0.3]
 
 inference:
-  # Machine B paths - modify these for your actual paths
-  strong_model_path: "agent"
-  # weak_model_path: "/volume/pt-train/users/wzhang/ghchen/zh/models/"
-  weak_model_path: "/volume/pt-train/models/Qwen3-8B"
+  strong_model_path: "gpt-5"
+  weak_model_path: "/volume/pt-train/models/Llama-3.1-8B-Instruct"
   max_tokens: 2048
   temperature: 0.0
   top_p: 0.9
   skip_special_tokens: true
 
-  base_port: 8001  # Different port for Machine B
+  base_port: 8001  
   strong_gpu_ids: [3,4]
   weak_gpu_ids: [6,7]
 
@@ -39,27 +37,20 @@ inference:
   xverify_api_key: "dummy"
 
 router:
-  # 选择路由器类型：trained_deberta / embedding_mlp / probe / ...
   router_type: "embedding_mlp"
 
-  # 训练完成后用于推理的模型目录（可改为实际 checkpoint 目录）
   model_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/deberta_checkpoints/agent/checkpoint_epoch_2"
 
-  # EmbeddingMLP 相关配置（如需训练/评估 EmbeddingMLP 可切换 router_type）
-  embedding_files:
-    # - "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output/hotpotqa_4k_query_embeddings.pt"
-    - "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output/hotpotqa_500_query_embeddings.pt"
-    # - "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output/mmlu_train_query_embeddings.pt"
+  # Prefer directory lookup (hs-like): it will auto-pick "{task}_query_embeddings.pt" under this folder.
+  embedding_dir: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/query_embeddings_output"
+
 
   checkpoint_path: "embedding_mlp/test.pt"
 
-  # 以下参数对 embedding_mlp 无需，但保留以兼容其它路由
   probe_type: "dynamic_dirichlet"
-  use_sampling: false
-  num_samples: 50
+  num_samples: 20  # Used for semantic_entropy router
 
 training:
-  # 对齐 MLPRouter 典型超参
   epochs: 50       
   batch_size: 32
   learning_rate: 0.0001   
@@ -68,8 +59,6 @@ training:
   # mlp_hidden_dims: [64]  # Hidden layers for MLP probe, set to null or [] for single layer
   # mlp_dropout: 0.5  # Dropout rate for MLP probe layers
 
-  reward_model_name: "microsoft/deberta-v3-base"
-  reward_output_dir: "reward_model"
   logits_output_dir: "../hs"
   probe_save_path: "probe_save/base/probe"
   query_embedding_output_dir: "query_embeddings_output"
@@ -78,7 +67,6 @@ training:
   embedding_dropout: 0.1
   seed: 42
 
-  # DeBERTa Router 训练配置
   deberta_train_path: "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/data/sample_data.jsonl"
   deberta_val_path: null
   deberta_model_name: "/volume/pt-train/users/wzhang/ghchen/zh/models/deberta-v3-small"

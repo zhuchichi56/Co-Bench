@@ -1,0 +1,13 @@
+
+
+=== load_config ===
+Loading configuration from: /volume/pt-train/users/wzhang/ghchen/zh/CoBench/config_B.yaml
+
+
+=== train_probe probe_type=dynamic_dirichlet ===
+
+--- exception ---
+Traceback (most recent call last):
+  File "/volume/pt-train/users/wzhang/ghchen/zh/CoBench/src/main.py", line 43, in run
+    return fn(*args, **kwargs)
+TypeError: complete_probe_training_pipeline_with_mixed_datasets() takes from 2 to 6 positional arguments but 7 were given

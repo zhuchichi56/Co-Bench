@@ -172,5 +172,5 @@ class LLMs:
 
 if __name__ == '__main__':
     llm = LLMs(model_name='GPT_4o')
-    r = llm.request('你好')
+    r = llm.request('hello')
     print(r)

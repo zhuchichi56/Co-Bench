@@ -15,7 +15,6 @@ import ast
 from typing import Optional, Union, List, Dict
 from torch.utils.data import DataLoader
 from math import isclose
-from transformers import AutoModelForSequenceClassification, AutoTokenizer,AutoModelForCausalLM
 from datetime import datetime, timezone
 # import parser as qwen_parser
 # import grader as qwen_grader
@@ -76,8 +75,6 @@ class MultiModalLossCalculator:
         else:
             raise ValueError(f"Unknown loss type: {loss_type}")
     
-    
-    # TODO： 这个地方是SFT LOSS or NOT 取决于dataloader 如何设定
     def _calculate_general_loss(self, data_loader: DataLoader) -> float:
         """Calculate SFT loss with clipping"""
         total_loss, num_batches = 0.0, 0
@@ -250,23 +247,21 @@ class MultiModalLossCalculator:
             return not any(keyword in generated for keyword in self.refusal_keywords)
 
         elif loss_type in [ "mmlu","mmlupro", "math","qa"]:
-            # 使用 xVerify 评估 MMLU 和 Math 类型的问题
+            # Use xVerify to evaluate MMLU / Math-style questions.
             # Initialize xVerify model with config parameters
-            if self.inference_config is not None:
-                xverify_model = Model(
-                    model_name=self.inference_config.xverify_model_name,
-                    model_path_or_url=self.inference_config.xverify_model_url,
-                    inference_mode=self.inference_config.xverify_inference_mode,
-                    api_key=self.inference_config.xverify_api_key,
+            if self.inference_config is None:
+                raise ValueError(
+                    "inference_config is required for xVerify evaluation. "
+                    "Please pass inference_config with xverify_model_name/xverify_model_url/"
+                    "xverify_inference_mode/xverify_api_key."
                 )
-            else:
-                # Fallback to default values if no config provided
-                xverify_model = Model(
-                    model_name="xVerify",
-                    model_path_or_url="http://127.0.0.1:8000/v1",
-                    inference_mode="api",
-                    api_key="dummy",
-                )
+
+            xverify_model = Model(
+                model_name=self.inference_config.xverify_model_name,
+                model_path_or_url=self.inference_config.xverify_model_url,
+                inference_mode=self.inference_config.xverify_inference_mode,
+                api_key=self.inference_config.xverify_api_key,
+            )
             evaluator = Evaluator(model=xverify_model)
             acc_str = evaluator.single_evaluate(
                 question=instruction,
@@ -617,7 +612,7 @@ def llm_as_a_judge(questions: List[dict], answers: List[dict], judge_model: str 
 
     return scores
 
-#temporary
+
 def llm_judge_general(
     questions: List[dict], 
     answers: List[dict], 
@@ -625,7 +620,7 @@ def llm_judge_general(
     ref_answers: List[dict] = None,
     max_workers: int = 32,
    
-) -> List[float]:
+    ) -> List[float]:
     """
     LLM-as-a-Judge evaluation function for general datasets with reference answers
     Based on MT-Bench methodology adapted for Alpaca/Magpie style datasets
