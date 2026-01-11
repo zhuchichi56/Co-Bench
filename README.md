@@ -1,5 +1,12 @@
 # CoBench
 
+<p>
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-blue">
+  <img alt="Task" src="https://img.shields.io/badge/Task-LLM%20routing%20%2F%20selective%20prediction-6b7280">
+  <img alt="Inference" src="https://img.shields.io/badge/Inference-vLLM-111827">
+  <img alt="Scoring" src="https://img.shields.io/badge/Scoring-xVerify-111827">
+</p>
+
 CoBench is an **LLM routing / selective prediction** framework. Given a **weak model** (cheap) and a **strong model** (expensive), it trains/evaluates different **routers** (confidence/difficulty predictors) to decide when to escalate to the strong model, and reports metrics such as **recovery rate**, **call rate**, and **AUROC**.
 
 The main entrypoint is `src/main.py` with three modes:
@@ -8,7 +15,7 @@ The main entrypoint is `src/main.py` with three modes:
 - `train`: train routers (probe / embedding_mlp / trained_deberta / ...)
 - `eval`: evaluate routers on datasets and write results to `src/metric_results/`
 
-## Overview 
+## <img src="./assets/icons/overview.svg" width="18" alt="overview icon"> Overview 
 
 
 <p align="center">
@@ -64,7 +71,7 @@ Notes (matching current CoBench code):
 
 These bands are controlled in config by `recovery_rate_band` and `lpm_call_rate_band` (see `config_B.yaml` and `src/config.py`).
 
-## Quickstart
+## <img src="./assets/icons/rocket.svg" width="18" alt="quickstart icon"> Quickstart
 
 ### TL;DR: run CoBench end-to-end
 
@@ -143,7 +150,7 @@ bash src/scripts/eval.sh
 - **logits**: generates weak-model logits + hidden states (used by logits-based routers and probes), written under `logits_output/` and `hs/`.
 - **embeddings**: generates query embeddings (used by `embedding_mlp`), written under `query_embeddings_output/`.
 
-## Routers
+## <img src="./assets/icons/router.svg" width="18" alt="router icon"> Routers
 
 Select the router via `router.router_type` in `config_B.yaml`:
 
@@ -176,7 +183,7 @@ python main.py --mode eval --datasets math mmlu_test alpaca_5k_test
 
 > Note: `dynamic_dirichlet` requires hidden states for the dataset (by default under repo-root `hs/`, named like `<weak_model_name>_<dataset>.pt`; MMLU-Pro uses `hs/mmlu_pro/`).
 
-## Datasets
+## <img src="./assets/icons/dataset.svg" width="18" alt="dataset icon"> Datasets
 
 Built-in dataset names are defined in `src/data.py:DatasetRegistry`. Commonly used ones:
 
