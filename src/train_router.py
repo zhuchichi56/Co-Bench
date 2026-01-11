@@ -370,7 +370,7 @@ class ProbeTrainer:
                 'metadata': {'probe_type': self.probe_type, 'input_dim': input_dim, 'output_dim': 1, 'device': self.device}
             }
 
-            # Persist dynamic fusion shape info for correct loading later.
+
             if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
                 num_layers = self.probe_config.get("num_layers", None)
                 checkpoint['num_layers'] = num_layers

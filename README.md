@@ -12,7 +12,7 @@ The main entrypoint is `src/main.py` with three modes:
 
 
 <p align="center">
-  <img src="./assets/CoBench.pdf" alt="CoBench overview: collaboration architecture & evaluation protocol" width="95%">
+  <img src="./assets/CoBench.png" alt="CoBench overview: collaboration architecture & evaluation protocol" width="95%">
 </p>
 
 The figure summarizes two things:
@@ -36,7 +36,7 @@ CoBench provides four router families:
 CoBench supports two probe types used in our setup:
 
 - `probe_type=mean`: uniform (deterministic) fusion, \(\hat{z}(x)=\frac{1}{L}\sum_{l=1}^{L} z^{(l)}(x)\).
-- `probe_type=dynamic_dirichlet`: dynamic fusion with a Dirichlet distribution over layer weights (below).
+- `probe_type=dynamic_dirichlet`: **DynamicDirichlet** with a Dirichlet distribution over layer weights (below).
 
 Given per-layer hidden states \(z^{(1)}(x),\dots,z^{(L)}(x)\), we learn a distribution over layer-weights:
 
@@ -66,7 +66,17 @@ These bands are controlled in config by `recovery_rate_band` and `lpm_call_rate_
 
 ## Quickstart
 
-### Configure
+### TL;DR: run CoBench end-to-end
+
+At a high level you will:
+
+- **(0) Configure** models + evaluation knobs in `config_B.yaml`
+- **(1) Start services**: vLLM (weak/strong as needed) and xVerify (for math/mmlu/qa)
+- **(2) Prepare** artifacts: `scores` / `logits` / `embeddings`
+- **(3) Train** routers (probes / embedding_mlp / deberta)
+- **(4) Eval** routers and write metrics
+
+### Step 0: Configure
 
 Default config is `config_B.yaml` (see `src/config.py:PipelineConfig.from_yaml`). You typically update:
 
@@ -75,25 +85,16 @@ Default config is `config_B.yaml` (see `src/config.py:PipelineConfig.from_yaml`)
 - (if using GPT/Judge) set `OPENAI_API_KEY` / `OPENAI_API_BASE` env vars or fill them in YAML
 - (for math/mmlu scoring) configure xVerify (`inference.xverify_model_url`, etc.)
 
-### What does `prepare` produce?
+### Step 1: Start services (vLLM + optional xVerify)
 
-`prepare` can run three steps (controlled by `prepare_steps` in config / `src/scripts/prepare_all.sh`):
+CoBench queries models via HTTP (`src/inference/vllm_client.py`).
 
-- **scores**: runs weak/strong inference and writes per-sample correctness labels under `results/`.
-  - For `general` datasets, scoring uses LLM-as-a-judge (`llm_judge_general` in `src/data.py`).
-  - For `math / mmlu / qa` datasets, scoring uses xVerify (`src/loss_calculator.py`).
-- **logits**: generates weak-model logits + hidden states (used by logits-based routers and probes), written under `logits_output/` and `hs/`.
-- **embeddings**: generates query embeddings (used by `embedding_mlp`), written under `query_embeddings_output/`.
-
-### Start inference service (local vLLM)
-
-CoBench calls a local inference server via HTTP (`src/inference/vllm_client.py`).
-
-- If your `prepare` step includes **scores** (default in `src/scripts/prepare_all.sh`), you need model inference access for **weak** and **strong** models:
-  - If `inference.{weak,strong}_model_path` points to local models, start vLLM for both.
-  - If `inference.strong_model_path` is set to `false` (use remote judge / API), you do not need a local strong-model vLLM.
-- For **math / mmlu / qa**-type datasets, scoring uses **xVerify** to judge correctness (`src/loss_calculator.py`), so you also need an xVerify API endpoint running (configure `inference.xverify_model_url`, etc.).
-- During **eval**, the **self-based** routers (e.g. `semantic_entropy`, `self_questioning`) also query the weak model, so they require the vLLM server to be up.
+- **When do I need vLLM?**
+  - If your `prepare_steps` includes `scores` (default), you need inference access for **weak** and **strong**.
+  - If your `eval` uses **self-based** routers (`semantic_entropy`, `self_questioning`), you need inference access for the **weak** model.
+  - If `inference.strong_model_path=false` (use remote judge / API), you do not need a local strong-model vLLM.
+- **When do I need xVerify?**
+  - For `math / mmlu / qa` datasets, scoring uses xVerify to judge correctness (`src/loss_calculator.py`).
 
 Example: start xVerify server (from `src/scripts/run.sh`):
 
@@ -114,7 +115,7 @@ cd src/inference
 python start.py --model_path "/path/to/your/model" --base_port 8001 --gpu_list "0,1"
 ```
 
-### Run the 3-stage pipeline
+### Step 2–4: Run the pipeline
 
 Scripts are under `src/scripts/` (they `cd src` and temporarily patch config, restored on exit):
 
@@ -125,12 +126,22 @@ bash src/scripts/prepare_all.sh
 # train probes (datasets before -- ; probe types after --)
 bash src/scripts/train_probes.sh alpaca_5k_train big_math_5k_train mmlu_train -- mean
 
-# train Dirichlet dynamic-fusion probe
+# train DynamicDirichlet probe
 bash src/scripts/train_probes.sh alpaca_5k_train big_math_5k_train mmlu_train -- dynamic_dirichlet
 
 # evaluate routers
 bash src/scripts/eval.sh
 ```
+
+### What does `prepare` produce? (artifacts & outputs)
+
+`prepare` can run three steps (controlled by `prepare_steps` in config / `src/scripts/prepare_all.sh`):
+
+- **scores**: runs weak/strong inference and writes per-sample correctness labels under `results/`.
+  - For `general` datasets, scoring uses LLM-as-a-judge (`llm_judge_general` in `src/data.py`).
+  - For `math / mmlu / qa` datasets, scoring uses xVerify (`src/loss_calculator.py`).
+- **logits**: generates weak-model logits + hidden states (used by logits-based routers and probes), written under `logits_output/` and `hs/`.
+- **embeddings**: generates query embeddings (used by `embedding_mlp`), written under `query_embeddings_output/`.
 
 ## Routers
 
@@ -147,7 +158,7 @@ Batch modes (convenience):
 - `router_type=self_based` will evaluate `semantic_entropy` and `self_questioning`.
 - `router_type=logits_based_routers` will evaluate `max_logits`, `top10_variance`, `coe`, `entropy`, and `confidence_margin`.
 
-### Enable Dirichlet dynamic-fusion router (minimal YAML)
+### Enable DynamicDirichlet router (minimal YAML)
 
 ```yaml
 router:

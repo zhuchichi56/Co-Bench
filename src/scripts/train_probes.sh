@@ -39,7 +39,7 @@ if [ ${#DATASETS[@]} -eq 0 ]; then
 fi
 
 if [ ${#PROBES[@]} -eq 0 ]; then
-  # Default: train the Dirichlet dynamic fusion probe
+  # Default: train the DynamicDirichlet probe
   PROBES=("dynamic_dirichlet")
 else
   :

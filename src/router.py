@@ -574,7 +574,7 @@ class ProbeRouter(Router):
         model_class = self.PROBE_TYPES[self.probe_type]
 
         if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
-            # Dynamic fusion probe requires additional parameters
+           
             num_layers = metadata.get("num_layers", 32)
             probe_method = "softmax" if self.probe_type == "dynamic_softmax" else "dirichlet"
             model = model_class(input_dim, num_layers, output_dim, probe_method)
@@ -635,7 +635,7 @@ class ProbeRouter(Router):
         """
         Extract features from input data based on probe type
         
-        Note: For dynamic fusion probes (dynamic_softmax, dynamic_dirichlet), 
+        Note: For dynamic probes (dynamic_softmax, dynamic_dirichlet), 
         this method is not used; get_router_scores handles them directly.
         """
         features = []
@@ -675,8 +675,6 @@ class ProbeRouter(Router):
                     torch.stack(angle_features)
                 ], dim=0)
             else:
-                # For other probe types (including dynamic fusion probes if called),
-                # use hidden_states directly
                 feat = hidden_states
 
             features.append(feat.unsqueeze(0))
@@ -696,7 +694,7 @@ class ProbeRouter(Router):
         """
         self.model.eval()
         
-        # For dynamic fusion probes, process hidden_states directly (no extract_features needed)
+        # For dynamic probes, process hidden_states directly (no extract_features needed)
         if self.probe_type in ["dynamic_softmax", "dynamic_dirichlet"]:
             features = []
             for item in data:
