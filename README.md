@@ -28,9 +28,9 @@ The figure summarizes two things:
 - **Methodology (right)**: a router predicts whether the **SLM/weak model** can answer correctly; if not, we **call the LLM/strong model**.
 - **Evaluation framework (left)**: we evaluate **cross-domain robustness**, **router ability (AUROC)**, and **scenario alignment** under different call-rate regimes (**LPM / MPM / HCR**).
 
-<a id="evaluation"></a>
+## 📏 Evaluation
 
-## 📏 Evaluation framework: what we measure？
+### What we measure
 
 - **Cross-domain robustness**: evaluate in-domain and out-of-domain datasets (see [Datasets](#datasets)).
   - In-domain examples in our setting: Alpaca, BigMath, MMLU
