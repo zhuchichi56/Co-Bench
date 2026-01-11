@@ -1,10 +1,10 @@
 # CoBench：Towards Fair and Comprehensive Evaluation of Routers in Collaborative LLM Systems
 
-<p>
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.10%2B-blue">
-  <img alt="Task" src="https://img.shields.io/badge/Task-LLM%20routing%20%2F%20selective%20prediction-6b7280">
-  <img alt="Inference" src="https://img.shields.io/badge/Inference-vLLM-111827">
-  <img alt="Scoring" src="https://img.shields.io/badge/Scoring-xVerify-111827">
+<p align="center">
+  <a href="#-overview">🗺️ Overview</a> |
+  <a href="#-quickstart">🚀 Quickstart</a> |
+  <a href="#-routers">🔀 Routers</a> |
+  <a href="#-datasets">📚 Datasets</a>
 </p>
 
 CoBench is an **LLM routing / selective prediction** framework. Given a **weak model** (cheap) and a **strong model** (expensive), it trains/evaluates different **routers** (confidence/difficulty predictors) to decide when to escalate to the strong model, and reports metrics such as **recovery rate**, **call rate**, and **AUROC**.
