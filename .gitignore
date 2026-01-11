@@ -5,6 +5,7 @@ src/qwen2.5-results/
 src/query_embeddings_output/
 outputs/
 no_use/
+external/xverify/
 hs/
 probe_save/
 wandb/

@@ -96,13 +96,25 @@ At a high level you will:
 
 ### Step 0: Setup environment
 
+Clone the repo:
+
+```bash
+git clone <YOUR_REPO_URL> && cd CoBench
+```
+
+If you need xVerify (for `math / mmlu / qa` scoring), clone it into `external/xverify`:
+
+```bash
+git clone https://github.com/IAAR-Shanghai/xVerify.git external/xverify
+```
+
 Install dependencies (recommended in a fresh venv/conda env):
 
 ```bash
 pip install -r requirements.txt
 ```
 
-If you run xVerify locally (via `vllm serve ...`), it may require extra deps:
+If you run xVerify locally (via `vllm serve ...`), it may require extra deps (from `external/xverify`):
 
 ```bash
 pip install -r external/xverify/requirements.txt

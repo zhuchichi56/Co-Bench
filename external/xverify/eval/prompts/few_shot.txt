@@ -1,3 +1,0 @@
-You are an expert in {task_type}, {task_description}
-{examples}
-{question}
