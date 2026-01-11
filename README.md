@@ -2,8 +2,8 @@
 
 <p align="center">
   <a href="#-overview">🗺️ Overview</a> |
-  <a href="#-quickstart">🚀 Quickstart</a> |
   <a href="#-routers">🔀 Routers</a> |
+  <a href="#-quickstart">🚀 Quickstart</a> |
   <a href="#-datasets">📚 Datasets</a>
 </p>
 
@@ -27,37 +27,6 @@ The figure summarizes two things:
 - **Methodology (right)**: a router predicts whether the **SLM/weak model** can answer correctly; if not, we **call the LLM/strong model**.
 - **Evaluation framework (left)**: we evaluate **cross-domain robustness**, **router ability (AUROC)**, and **scenario alignment** under different call-rate regimes (**LPM / MPM / HCR**).
 
-### Methodology: router families
-
-All routers are implemented in `src/router.py` (and wired into the pipeline via `src/pipeline.py` / `src/main.py`).
-
-CoBench provides four router families:
-
-- **Verb-based** (`router_type=self_based`): routers that operate on model-generated text (verbalized signals), e.g. `semantic_entropy`, `self_questioning`.
-- **Logits-based** (`router_type=logits_based_routers`): routers that operate on weak-model logits (and derived statistics), e.g. `max_logits`, `top10_variance`, `entropy`, `confidence_margin`, `logits_margin` (and `coe`).
-- **Embedding-based** (`router_type=embedding_mlp`): route based on pre-computed query embeddings + an MLP head (`EmbeddingMLPRouter`).
-- **Probe-based (ours)** (`router_type=probe`): route based on hidden states + a learned probe (`ProbeRouter`). In our setup we use `probe_type=mean` and `probe_type=dynamic_dirichlet`.
-
-#### Probe-based (ours): Mean / DynamicDirichlet probes
-
-CoBench supports two probe types used in our setup:
-
-- `probe_type=mean`: uniform (deterministic) fusion, $\hat{z}(x)=\frac{1}{L}\sum_{l=1}^{L} z^{(l)}(x)$.
-- `probe_type=dynamic_dirichlet`: **DynamicDirichlet** with a Dirichlet distribution over layer weights (below).
-
-Given per-layer hidden states $z^{(1)}(x),\dots,z^{(L)}(x)$, we learn a distribution over layer-weights:
-
-$$
-\alpha(x) \sim \mathrm{Dir}(\beta(x)), \quad \hat{z}(x) = \sum_{l=1}^{L}\alpha_l(x)\, z^{(l)}(x)
-$$
-
-Then a probe head maps $\hat{z}(x)$ to a **probe score** (sigmoid) used for routing.
-
-Notes (matching current CoBench code):
-
-- **Training**: sample $\alpha$ from Dirichlet for regularization (stochastic fusion).
-- **Inference**: use the Dirichlet **expected weights** (deterministic fusion). The concentration mass (e.g. $\beta_0=\sum_l \beta_l$) can serve as an uncertainty proxy (the default pipeline uses the sigmoid score for routing).
-
 ### Evaluation framework: what we measure
 
 - **Cross-domain robustness**: evaluate in-domain and out-of-domain datasets (see [Datasets](#datasets)).
@@ -71,19 +40,72 @@ Notes (matching current CoBench code):
 
 These bands are controlled in config by `recovery_rate_band` and `lpm_call_rate_band` (see `config_B.yaml` and `src/config.py`).
 
+## 🔀 Routers
+
+All routers are implemented in `src/router.py` (and wired into the pipeline via `src/pipeline.py` / `src/main.py`).
+
+### Methodology: router families
+
+Select the router via `router.router_type` in `config_B.yaml`:
+
+- **Verb-based** (`router_type=self_based`): routers that operate on model-generated text (verbalized signals), e.g. `semantic_entropy`, `self_questioning`.
+- **Logits-based** (`router_type=logits_based_routers`): routers that operate on weak-model logits (and derived statistics), e.g. `max_logits`, `top10_variance`, `entropy`, `confidence_margin`, `logits_margin` (and `coe`).
+- **Embedding-based** (`router_type=embedding_mlp`): route based on pre-computed query embeddings + an MLP head (`EmbeddingMLPRouter`).
+- **Probe-based (ours)** (`router_type=probe`): route based on hidden states + a learned probe (`ProbeRouter`). In our setup we use `probe_type=mean` and `probe_type=dynamic_dirichlet`.
+
+Batch modes (convenience):
+
+- `router_type=self_based` will evaluate `semantic_entropy` and `self_questioning`.
+- `router_type=logits_based_routers` will evaluate `max_logits`, `top10_variance`, `coe`, `entropy`, and `confidence_margin`.
+
+### Probe-based (ours): Mean / DynamicDirichlet
+
+CoBench supports two probe types used in our setup:
+
+- `probe_type=mean`: uniform (deterministic) fusion, $\hat{z}(x)=\frac{1}{L}\sum_{l=1}^{L} z^{(l)}(x)$.
+- `probe_type=dynamic_dirichlet`: **DynamicDirichlet** with a Dirichlet distribution over layer weights.
+
+Given per-layer hidden states $z^{(1)}(x),\dots,z^{(L)}(x)$, we learn a distribution over layer-weights:
+
+$$
+\alpha(x) \sim \mathrm{Dir}(\beta(x)), \quad \hat{z}(x) = \sum_{l=1}^{L}\alpha_l(x)\, z^{(l)}(x)
+$$
+
+Then a probe head maps $\hat{z}(x)$ to a **probe score** (sigmoid) used for routing.
+
+Notes (matching current CoBench code):
+
+- **Training**: sample $\alpha$ from Dirichlet for regularization (stochastic fusion).
+- **Inference**: use the Dirichlet **expected weights** (deterministic fusion). The concentration mass (e.g. $\beta_0=\sum_l \beta_l$) can serve as an uncertainty proxy.
+
 ## 🚀 Quickstart
 
 ### TL;DR: run CoBench end-to-end
 
 At a high level you will:
 
-- **(0) Configure** models + evaluation knobs in `config_B.yaml`
-- **(1) Start services**: vLLM (weak/strong as needed) and xVerify (for math/mmlu/qa)
-- **(2) Prepare** artifacts: `scores` / `logits` / `embeddings`
-- **(3) Train** routers (probes / embedding_mlp / deberta)
-- **(4) Eval** routers and write metrics
+- **(0) Setup environment** from `requirements.txt`
+- **(1) Configure** models + evaluation knobs in `config_B.yaml`
+- **(2) Start services**: vLLM (weak/strong as needed) and xVerify (for math/mmlu/qa)
+- **(3) Prepare** artifacts: `scores` / `logits` / `embeddings`
+- **(4) Train** routers (probes / embedding_mlp / deberta)
+- **(5) Eval** routers and write metrics
 
-### Step 0: Configure
+### Step 0: Setup environment
+
+Install dependencies (recommended in a fresh venv/conda env):
+
+```bash
+pip install -r requirements.txt
+```
+
+If you run xVerify locally (via `vllm serve ...`), it may require extra deps:
+
+```bash
+pip install -r external/xverify/requirements.txt
+```
+
+### Step 1: Configure
 
 Default config is `config_B.yaml` (see `src/config.py:PipelineConfig.from_yaml`). You typically update:
 
@@ -92,7 +114,7 @@ Default config is `config_B.yaml` (see `src/config.py:PipelineConfig.from_yaml`)
 - (if using GPT/Judge) set `OPENAI_API_KEY` / `OPENAI_API_BASE` env vars or fill them in YAML
 - (for math/mmlu scoring) configure xVerify (`inference.xverify_model_url`, etc.)
 
-### Step 1: Start services (vLLM + optional xVerify)
+### Step 2: Start services (vLLM + optional xVerify)
 
 CoBench queries models via HTTP (`src/inference/vllm_client.py`).
 
@@ -122,7 +144,7 @@ cd src/inference
 python start.py --model_path "/path/to/your/model" --base_port 8001 --gpu_list "0,1"
 ```
 
-### Step 2–4: Run the pipeline
+### Step 3–5: Run the pipeline
 
 Scripts are under `src/scripts/` (they `cd src` and temporarily patch config, restored on exit):
 
@@ -149,39 +171,6 @@ bash src/scripts/eval.sh
   - For `math / mmlu / qa` datasets, scoring uses xVerify (`src/loss_calculator.py`).
 - **logits**: generates weak-model logits + hidden states (used by logits-based routers and probes), written under `logits_output/` and `hs/`.
 - **embeddings**: generates query embeddings (used by `embedding_mlp`), written under `query_embeddings_output/`.
-
-## 🔀 Routers
-
-Select the router via `router.router_type` in `config_B.yaml`:
-
-- **Probe family**: `probe` + `probe_type` (e.g. `mean/max/hs_last_mlp/coe_dual_mlp/dynamic_dirichlet/...`; see `src/router.py:get_available_probe_types`)
-- **Embedding MLP**: `embedding_mlp` (needs `query_embeddings_output` and `router.checkpoint_path`)
-- **Self-based**: `semantic_entropy` / `self_questioning`
-- **Logits-based**: `max_logits/top10_variance/entropy/confidence_margin/coe`
-- **(Trained) DeBERTa**: `trained_deberta`
-
-Batch modes (convenience):
-
-- `router_type=self_based` will evaluate `semantic_entropy` and `self_questioning`.
-- `router_type=logits_based_routers` will evaluate `max_logits`, `top10_variance`, `coe`, `entropy`, and `confidence_margin`.
-
-### Enable DynamicDirichlet router (minimal YAML)
-
-```yaml
-router:
-  router_type: "probe"
-  probe_type: "dynamic_dirichlet"
-  checkpoint_path: "probe_save/your_checkpoint.pt"
-```
-
-Then:
-
-```bash
-cd src
-python main.py --mode eval --datasets math mmlu_test alpaca_5k_test
-```
-
-> Note: `dynamic_dirichlet` requires hidden states for the dataset (by default under repo-root `hs/`, named like `<weak_model_name>_<dataset>.pt`; MMLU-Pro uses `hs/mmlu_pro/`).
 
 ## 📚 Datasets
 
