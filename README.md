@@ -99,7 +99,7 @@ At a high level you will:
 Clone the repo:
 
 ```bash
-git clone <YOUR_REPO_URL> && cd CoBench
+git clone https://github.com/zhuchichi56/CoBench.git && cd CoBench
 ```
 
 If you need xVerify (for `math / mmlu / qa` scoring), clone it into `external/xverify`:
