@@ -12,7 +12,6 @@ wandb/
 src/utils/visualizations/
 src/metric_results/
 *.jsonl
-*.png
 *.jpg
 *.csv
 *.pt
